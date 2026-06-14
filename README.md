@@ -101,9 +101,37 @@ Useful checks:
 ```bash
 npm run lint
 npm run build
+npm run preflight
 ```
 
 On this Windows machine, Next may print an optional SWC native binding warning. The production build still completes successfully with the current `--webpack` scripts.
+
+## Production Readiness Checklist
+
+Before exposing the app to real users:
+
+- Set all required Vercel environment variables.
+- Run `npm run preflight`.
+- Run `supabase/schema.sql` in the production Supabase project.
+- Replace demo installers with real verified installers.
+- Confirm the `inspection-images` storage policy fits the business model. Public URLs are convenient for MVP demos; signed URLs are better for private customer data.
+- Test `/api/health`; `ok` should be `true` when OpenAI is configured.
+- Test `/api/analyze` with JPEG, PNG, and WebP images under 10MB.
+- Confirm Vercel Function logs do not show OpenAI, Supabase, or storage failures.
+- Keep `SUPABASE_SERVICE_ROLE_KEY` server-only. Never expose it in client code.
+- Add auth before storing customer-identifiable production reports.
+
+Production guards already included:
+
+- Security headers and Content Security Policy in `next.config.mjs`.
+- Camera/geolocation permission policy scoped to the app.
+- AI route rate limiting per forwarded IP.
+- Image MIME and size validation.
+- Sanitized prompt/context fields.
+- Bounded GPS coordinates.
+- Graceful OpenAI error handling.
+- Global app error boundary.
+- Demo fallback data for analytics/report queues when Supabase is not configured.
 
 ## Deploy to Vercel
 
@@ -156,11 +184,13 @@ Storage:
 
 Returns whether OpenAI and Supabase are configured.
 
+Production expectation: `ok` is `true` only when OpenAI is configured. Supabase and Storage readiness are returned separately.
+
 ### `POST /api/analyze`
 
 Receives multipart form data:
 
-- `image`: required image file.
+- `image`: required JPEG, PNG, or WebP image under 10MB.
 - `cameraLabel`: camera/device label.
 - `locationLabel`: room/area text.
 - `lidarNotes`: manual LiDAR, thermal, or measurement notes.
@@ -174,6 +204,14 @@ Returns:
 - `installers`
 - `imageUrl`
 - `model`
+
+Protections:
+
+- Rate limited.
+- Rejects unsupported image types.
+- Sanitizes text fields.
+- Bounds GPS coordinates.
+- Uses `store: false` on the OpenAI Responses API call.
 
 ### `GET /api/analytics`
 

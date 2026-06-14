@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
+import { getRuntimeHealth } from "@/lib/server-config";
 
 export function GET() {
+  const health = getRuntimeHealth();
   return NextResponse.json({
-    ok: true,
-    openaiConfigured: Boolean(process.env.OPENAI_API_KEY),
-    supabaseConfigured: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
+    ok: health.openaiConfigured,
+    ...health
   });
 }

@@ -209,7 +209,8 @@ h3 {
 .camera-panel,
 .control-panel,
 .results,
-.error-box {
+.error-box,
+.error-state {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
@@ -522,6 +523,11 @@ h3 {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.error-state {
+  padding: 24px;
+  max-width: 760px;
 }
 
 .results {

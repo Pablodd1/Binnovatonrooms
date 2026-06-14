@@ -3,7 +3,12 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "BuildScan AI",
-  description: "Inspector inteligente de obras con IA visual y matching de instaladores."
+  description: "Inspector inteligente de obras con IA visual, reportes, analiticas y matching de instaladores.",
+  applicationName: "BuildScan AI",
+  robots: {
+    index: false,
+    follow: false
+  }
 };
 
 export const viewport: Viewport = {

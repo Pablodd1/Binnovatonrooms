@@ -2,6 +2,8 @@ import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { inspectionJsonSchema, type InspectionDiagnosis } from "@/lib/analysis-schema";
 import { matchInstallers } from "@/lib/installer-match";
+import { checkRateLimit, getClientIp, imageExtension, sanitizeText, validateImageFile } from "@/lib/request-guards";
+import { requireOpenAIConfig } from "@/lib/server-config";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { buildUserPrompt, SYSTEM_PROMPT } from "@/lib/vision-prompt";
 
@@ -12,6 +14,12 @@ function numberOrNull(value: FormDataEntryValue | null) {
   if (typeof value !== "string" || value.trim() === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function boundedCoordinate(value: number | null, min: number, max: number) {
+  if (value === null) return null;
+  if (value < min || value > max) return null;
+  return value;
 }
 
 async function fileToDataUrl(file: File) {
@@ -29,7 +37,7 @@ async function storeImage(bytes: Buffer, mimeType: string) {
   const bucket = process.env.SUPABASE_BUCKET;
   if (!supabase || !bucket) return null;
 
-  const extension = mimeType.includes("png") ? "png" : "jpg";
+  const extension = imageExtension(mimeType);
   const path = `inspections/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
 
   const { error } = await supabase.storage.from(bucket).upload(path, bytes, {
@@ -84,10 +92,11 @@ async function saveReport(input: {
 }
 
 export async function POST(request: Request) {
-  if (!process.env.OPENAI_API_KEY) {
+  const rateLimit = checkRateLimit(`analyze:${getClientIp(request)}`, 20, 5 * 60 * 1000);
+  if (!rateLimit.ok) {
     return NextResponse.json(
-      { error: "Missing OPENAI_API_KEY. Add it in Vercel Project Settings." },
-      { status: 500 }
+      { error: "Too many analysis requests. Try again shortly." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil((rateLimit.resetAt - Date.now()) / 1000)) } }
     );
   }
 
@@ -98,63 +107,93 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Upload an image field named image." }, { status: 400 });
   }
 
-  if (image.size > 10 * 1024 * 1024) {
-    return NextResponse.json({ error: "Image is too large. Keep captures under 10MB." }, { status: 413 });
+  const imageError = validateImageFile(image);
+  if (imageError) {
+    return NextResponse.json({ error: imageError }, { status: imageError.includes("large") ? 413 : 400 });
   }
 
-  const cameraLabel = String(formData.get("cameraLabel") || "unknown camera");
-  const locationLabel = String(formData.get("locationLabel") || "");
-  const lidarNotes = String(formData.get("lidarNotes") || "");
-  const qualityNotes = String(formData.get("qualityNotes") || "");
-  const lat = numberOrNull(formData.get("lat"));
-  const lng = numberOrNull(formData.get("lng"));
+  const cameraLabel = sanitizeText(formData.get("cameraLabel"), "unknown camera", 160);
+  const locationLabel = sanitizeText(formData.get("locationLabel"), "", 180);
+  const lidarNotes = sanitizeText(formData.get("lidarNotes"), "", 700);
+  const qualityNotes = sanitizeText(formData.get("qualityNotes"), "", 250);
+  const lat = boundedCoordinate(numberOrNull(formData.get("lat")), -90, 90);
+  const lng = boundedCoordinate(numberOrNull(formData.get("lng")), -180, 180);
+
+  let openaiConfig: ReturnType<typeof requireOpenAIConfig>;
+  try {
+    openaiConfig = requireOpenAIConfig();
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "OpenAI is not configured." }, { status: 500 });
+  }
 
   const { dataUrl, bytes, mimeType } = await fileToDataUrl(image);
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const model = process.env.OPENAI_MODEL || "gpt-5.5";
+  const client = new OpenAI({ apiKey: openaiConfig.apiKey });
+  const model = openaiConfig.model;
 
-  const response = (await client.responses.create({
-    model,
-    instructions: SYSTEM_PROMPT,
-    input: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: buildUserPrompt({ cameraLabel, locationLabel, lidarNotes, qualityNotes })
-          },
-          {
-            type: "input_image",
-            image_url: dataUrl,
-            detail: "high"
-          }
-        ]
-      }
-    ],
-    text: {
-      verbosity: "low",
-      format: {
-        type: "json_schema",
-        name: "buildscan_inspection_diagnosis",
-        strict: true,
-        schema: inspectionJsonSchema
-      }
-    },
-    reasoning: { effort: "low" },
-    max_output_tokens: 1800,
-    store: false,
-    stream: false
-  } as Parameters<typeof client.responses.create>[0])) as { output_text: string };
+  let raw = "";
+  try {
+    const response = (await client.responses.create({
+      model,
+      instructions: SYSTEM_PROMPT,
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: buildUserPrompt({ cameraLabel, locationLabel, lidarNotes, qualityNotes })
+            },
+            {
+              type: "input_image",
+              image_url: dataUrl,
+              detail: "high"
+            }
+          ]
+        }
+      ],
+      text: {
+        verbosity: "low",
+        format: {
+          type: "json_schema",
+          name: "buildscan_inspection_diagnosis",
+          strict: true,
+          schema: inspectionJsonSchema
+        }
+      },
+      reasoning: { effort: "low" },
+      max_output_tokens: 1800,
+      store: false,
+      stream: false
+    } as Parameters<typeof client.responses.create>[0])) as { output_text: string };
 
-  const raw = response.output_text;
+    raw = response.output_text;
+  } catch (error) {
+    console.error("OpenAI analysis failed", error);
+    return NextResponse.json(
+      { error: "The visual analysis service is temporarily unavailable." },
+      { status: 502 }
+    );
+  }
+
+  let diagnosis: InspectionDiagnosis;
+  try {
+    diagnosis = JSON.parse(raw) as InspectionDiagnosis;
+  } catch (error) {
+    console.error("Failed to parse model response", error);
+    return NextResponse.json(
+      { error: "The visual analysis service returned an invalid diagnosis." },
+      { status: 502 }
+    );
+  }
+
   if (!raw) {
     return NextResponse.json({ error: "AI model returned no diagnosis." }, { status: 502 });
   }
 
-  const diagnosis = JSON.parse(raw) as InspectionDiagnosis;
-  const imageUrl = await storeImage(bytes, mimeType);
-  const installers = await matchInstallers({ diagnosis, lat, lng });
+  const [imageUrl, installers] = await Promise.all([
+    storeImage(bytes, mimeType),
+    matchInstallers({ diagnosis, lat, lng })
+  ]);
   const reportId = await saveReport({
     diagnosis,
     imageUrl,
@@ -162,7 +201,13 @@ export async function POST(request: Request) {
     locationLabel,
     lat,
     lng,
-    quality: { notes: qualityNotes }
+    quality: {
+      notes: qualityNotes,
+      image: {
+        sizeBytes: image.size,
+        mimeType
+      }
+    }
   });
 
   return NextResponse.json({
