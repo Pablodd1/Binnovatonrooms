@@ -61,6 +61,9 @@ src/lib/installer-match.ts               Supabase installer matching wrapper
 src/lib/supabase-admin.ts                Service-role Supabase client
 src/lib/vision-prompt.ts                 Spanish inspection prompt
 supabase/schema.sql                      Database, views, functions, demo installers
+supabase/migrations/                     Supabase CLI migration
+supabase/seed.sql                        Demo installer seed data
+supabase/config.toml                     Local Supabase CLI config
 ```
 
 ## Environment Variables
@@ -115,6 +118,9 @@ Useful checks:
 npm run lint
 npm run build
 npm run preflight
+npm run supabase:start
+npm run supabase:reset
+npm run supabase:push
 ```
 
 On this Windows machine, Next may print an optional SWC native binding warning. The production build still completes successfully with the current `--webpack` scripts.
@@ -157,17 +163,53 @@ Production guards already included:
 
 ## Supabase Setup
 
-1. Create a Supabase project.
-2. Open SQL Editor.
-3. Run:
+Option A: Supabase Dashboard
 
-```sql
--- paste and run supabase/schema.sql
+1. Create a Supabase project at `https://supabase.com/dashboard`.
+2. Open SQL Editor.
+3. Paste and run `supabase/schema.sql`.
+4. Open Project Settings > API.
+5. Copy:
+   - Project URL to `NEXT_PUBLIC_SUPABASE_URL`
+   - anon public key to `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - service_role key to `SUPABASE_SERVICE_ROLE_KEY`
+6. Set `SUPABASE_BUCKET=inspection-images`.
+7. Add those values in Vercel Project Settings > Environment Variables.
+
+Option B: Supabase CLI
+
+1. Install and log in:
+
+```bash
+npm install -g supabase
+supabase login
 ```
 
-4. Confirm the `inspection-images` bucket exists.
-5. Add real installers to `public.instaladores`.
-6. Keep `SUPABASE_SERVICE_ROLE_KEY` only on the server/Vercel side.
+2. Link your cloud project:
+
+```bash
+supabase link --project-ref your-project-ref
+```
+
+3. Push the migration:
+
+```bash
+npm run supabase:push
+```
+
+Local development with Supabase:
+
+```bash
+npm run supabase:start
+npm run supabase:reset
+```
+
+After setup:
+
+- Confirm the `inspection-images` bucket exists.
+- Replace demo installers in `public.instaladores` with real verified installers.
+- Keep `SUPABASE_SERVICE_ROLE_KEY` only on the server/Vercel side.
+- Do not expose service-role keys in browser/client code.
 
 ## Database Objects
 
@@ -175,6 +217,7 @@ Tables:
 
 - `public.instaladores`: installer directory with specialties, location, rating, contact fields, and active flag.
 - `public.reportes`: AI diagnosis reports with image URL, camera label, location, GPS, quality JSON, and diagnosis JSON.
+- `public.report_images`: per-photo metadata for multi-image inspection sets.
 
 Functions:
 
@@ -190,7 +233,14 @@ Views:
 
 Storage:
 
-- `inspection-images`: stores inspection captures.
+- `inspection-images`: public MVP bucket for inspection captures, restricted to JPEG, PNG, and WebP under 10MB each.
+
+Security:
+
+- RLS is enabled on all app tables.
+- Public users can only read active installers.
+- Reports and report images are managed by the server-side service role.
+- Storage allows public reads for MVP image URLs and service-role writes.
 
 ## API Routes
 

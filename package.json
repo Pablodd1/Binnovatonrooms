@@ -8,7 +8,10 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
-    "preflight": "npm run lint && npm run build"
+    "preflight": "npm run lint && npm run build",
+    "supabase:start": "npx supabase start",
+    "supabase:reset": "npx supabase db reset",
+    "supabase:push": "npx supabase db push"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.108.1",

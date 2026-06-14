@@ -60,6 +60,12 @@ async function storeImage(bytes: Buffer, mimeType: string) {
 async function saveReport(input: {
   diagnosis: InspectionDiagnosis;
   imageUrl: string | null;
+  images: Array<{
+    url: string | null;
+    mimeType: string;
+    sizeBytes: number;
+    quality: unknown;
+  }>;
   cameraLabel: string;
   locationLabel: string;
   lat: number | null;
@@ -91,7 +97,26 @@ async function saveReport(input: {
     return null;
   }
 
-  return data?.id ?? null;
+  const reportId = data?.id ?? null;
+
+  if (reportId && input.images.length > 0) {
+    const { error: imagesError } = await supabase.from("report_images").insert(
+      input.images.map((image, index) => ({
+        report_id: reportId,
+        sort_order: index + 1,
+        image_url: image.url,
+        mime_type: image.mimeType,
+        size_bytes: image.sizeBytes,
+        quality: image.quality
+      }))
+    );
+
+    if (imagesError) {
+      console.error("Report image save failed", imagesError);
+    }
+  }
+
+  return reportId;
 }
 
 export async function POST(request: Request) {
@@ -220,6 +245,12 @@ export async function POST(request: Request) {
   const reportId = await saveReport({
     diagnosis,
     imageUrl,
+    images: imageEntries.map((image, index) => ({
+      url: imageUrls[index] ?? null,
+      mimeType: imagePayloads[index]?.mimeType || image.type,
+      sizeBytes: image.size,
+      quality: null
+    })),
     cameraLabel,
     locationLabel,
     lat,
