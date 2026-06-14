@@ -10,6 +10,9 @@ import { buildUserPrompt, SYSTEM_PROMPT } from "@/lib/vision-prompt";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const MAX_ANALYSIS_IMAGES = 6;
+const MAX_TOTAL_IMAGE_BYTES = 30 * 1024 * 1024;
+
 function numberOrNull(value: FormDataEntryValue | null) {
   if (typeof value !== "string" || value.trim() === "") return null;
   const parsed = Number(value);
@@ -107,21 +110,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Send multipart form data with an image field named image." }, { status: 400 });
   }
 
-  const image = formData.get("image");
+  const imageEntries = [formData.get("image"), ...formData.getAll("images")].filter(
+    (entry): entry is File => entry instanceof File
+  );
 
-  if (!(image instanceof File)) {
-    return NextResponse.json({ error: "Upload an image field named image." }, { status: 400 });
+  if (imageEntries.length === 0) {
+    return NextResponse.json({ error: "Upload at least one image field named image or images." }, { status: 400 });
   }
 
-  const imageError = validateImageFile(image);
-  if (imageError) {
-    return NextResponse.json({ error: imageError }, { status: imageError.includes("large") ? 413 : 400 });
+  if (imageEntries.length > MAX_ANALYSIS_IMAGES) {
+    return NextResponse.json({ error: `Use ${MAX_ANALYSIS_IMAGES} images or fewer per inspection.` }, { status: 400 });
+  }
+
+  const totalImageBytes = imageEntries.reduce((sum, image) => sum + image.size, 0);
+  if (totalImageBytes > MAX_TOTAL_IMAGE_BYTES) {
+    return NextResponse.json({ error: "Inspection image set is too large. Keep total uploads under 30MB." }, { status: 413 });
+  }
+
+  for (const image of imageEntries) {
+    const imageError = validateImageFile(image);
+    if (imageError) {
+      return NextResponse.json({ error: imageError }, { status: imageError.includes("large") ? 413 : 400 });
+    }
   }
 
   const cameraLabel = sanitizeText(formData.get("cameraLabel"), "unknown camera", 160);
   const locationLabel = sanitizeText(formData.get("locationLabel"), "", 180);
   const lidarNotes = sanitizeText(formData.get("lidarNotes"), "", 700);
-  const qualityNotes = sanitizeText(formData.get("qualityNotes"), "", 250);
+  const qualityNotes = sanitizeText(formData.get("qualityNotes"), "", 500);
   const lat = boundedCoordinate(numberOrNull(formData.get("lat")), -90, 90);
   const lng = boundedCoordinate(numberOrNull(formData.get("lng")), -180, 180);
 
@@ -132,7 +148,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "OpenAI is not configured." }, { status: 500 });
   }
 
-  const { dataUrl, bytes, mimeType } = await fileToDataUrl(image);
+  const imagePayloads = await Promise.all(imageEntries.map((image) => fileToDataUrl(image)));
   const client = new OpenAI({ apiKey: openaiConfig.apiKey });
   const model = openaiConfig.model;
 
@@ -147,13 +163,13 @@ export async function POST(request: Request) {
           content: [
             {
               type: "input_text",
-              text: buildUserPrompt({ cameraLabel, locationLabel, lidarNotes, qualityNotes })
+              text: buildUserPrompt({ cameraLabel, locationLabel, lidarNotes, qualityNotes, imageCount: imagePayloads.length })
             },
-            {
+            ...imagePayloads.map((payload) => ({
               type: "input_image",
-              image_url: dataUrl,
+              image_url: payload.dataUrl,
               detail: "high"
-            }
+            }))
           ]
         }
       ],
@@ -196,10 +212,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "AI model returned no diagnosis." }, { status: 502 });
   }
 
-  const [imageUrl, installers] = await Promise.all([
-    storeImage(bytes, mimeType),
+  const [imageUrls, installers] = await Promise.all([
+    Promise.all(imagePayloads.map((payload) => storeImage(payload.bytes, payload.mimeType))),
     matchInstallers({ diagnosis, lat, lng })
   ]);
+  const imageUrl = imageUrls[0] ?? null;
   const reportId = await saveReport({
     diagnosis,
     imageUrl,
@@ -209,10 +226,14 @@ export async function POST(request: Request) {
     lng,
     quality: {
       notes: qualityNotes,
-      image: {
+      imageCount: imageEntries.length,
+      totalImageBytes,
+      images: imageEntries.map((image, index) => ({
+        index: index + 1,
         sizeBytes: image.size,
-        mimeType
-      }
+        mimeType: imagePayloads[index]?.mimeType || image.type,
+        url: imageUrls[index] ?? null
+      }))
     }
   });
 
@@ -221,6 +242,7 @@ export async function POST(request: Request) {
     diagnosis,
     installers,
     imageUrl,
+    imageUrls,
     model
   });
 }

@@ -14,8 +14,9 @@ BuildScan AI is a Vercel-ready web MVP for visual construction inspection. It tu
 ## Core Features
 
 - Camera capture from phone, laptop webcam, USB/UVC camera, borescope, or other camera exposed by the browser.
-- Manual image upload fallback for FLIR/thermal captures, screenshots, or photos from other devices.
-- Automatic capture refresh every 2 seconds while the camera is active.
+- Multi-photo inspection sets with up to 6 intentional captures per analysis.
+- Manual multi-image upload fallback for FLIR/thermal captures, screenshots, or photos from other devices.
+- Automatic quality refresh every 2 seconds while the camera is active without saving extra images.
 - Client-side capture coach with P/A/R grading for brightness, sharpness, glare, contrast, resolution, and framing.
 - Dynamic photo guidance for better position, distance, lighting, surface coverage, and measurement readiness.
 - Visual scan grid overlay for field framing.
@@ -29,6 +30,7 @@ BuildScan AI is a Vercel-ready web MVP for visual construction inspection. It tu
 - Recent/risk report queue with assignment-style statuses.
 - Inspection playbook that reacts to image quality, GPS state, and severity.
 - Surface measurement readiness checks for capture quality plus visible scale, LiDAR, laser, or manual measurement notes.
+- Recommended shot plan: frontal, rasante/lateral-light, close-up, context, and scale/thermal when available.
 - JSON export of the current diagnosis for tickets, CRM, insurance, or QA records.
 
 ## Stack
@@ -75,6 +77,7 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 SUPABASE_BUCKET=inspection-images
 
 NEXT_PUBLIC_APP_URL=https://your-vercel-app.vercel.app
+NEXT_PUBLIC_SITE_NAME=BuildScan AI
 ```
 
 Notes:
@@ -83,6 +86,14 @@ Notes:
 - `OPENAI_MODEL` is configurable. Use the best paid vision model available in your OpenAI account.
 - Supabase variables are required for persistence, image storage, analytics from real reports, and installer matching.
 - Without Supabase variables, `/api/analytics` and `/api/reports` return demo data so the UI remains usable.
+- `NEXT_PUBLIC_SITE_NAME` is optional and useful if the app is later white-labeled.
+
+Recommended future production variables:
+
+- `AUTH_SECRET`: required when authentication/user accounts are added.
+- `NEXT_PUBLIC_SENTRY_DSN` and `SENTRY_AUTH_TOKEN`: recommended for production error monitoring.
+- `SUPABASE_SIGNED_URLS=true`: recommended when private customer images replace public MVP storage.
+- `OPENAI_PROJECT` or provider-specific billing/project variables: useful for account separation if your AI provider supports it.
 
 ## Local Development
 
@@ -193,7 +204,8 @@ Production expectation: `ok` is `true` only when OpenAI is configured. Supabase 
 
 Receives multipart form data:
 
-- `image`: required JPEG, PNG, or WebP image under 10MB.
+- `image`: required primary JPEG, PNG, or WebP image under 10MB.
+- `images`: optional additional JPEG, PNG, or WebP images.
 - `cameraLabel`: camera/device label.
 - `locationLabel`: room/area text.
 - `lidarNotes`: manual LiDAR, thermal, or measurement notes.
@@ -206,12 +218,14 @@ Returns:
 - `diagnosis`
 - `installers`
 - `imageUrl`
+- `imageUrls`
 - `model`
 
 Protections:
 
 - Rate limited.
 - Rejects unsupported image types.
+- Allows up to 6 images and 30MB total per inspection set.
 - Sanitizes text fields.
 - Bounds GPS coordinates.
 - Uses `store: false` on the OpenAI Responses API call.
@@ -295,6 +309,8 @@ The app grades each capture before analysis:
 
 For maximum possible surface-dimension accuracy:
 
+- Use photos instead of full video for the web MVP. Video should be a later keyframe-extraction workflow.
+- Save 3-5 images per report: frontal, rasante/lateral-light, close-up, context, and scale/thermal if applicable.
 - Fill 60-80% of the camera view with the target surface.
 - Keep the phone parallel to the wall/floor/ceiling plane when possible.
 - Use rasante/lateral light to show texture, cracks, swelling, and finish defects.
@@ -346,15 +362,16 @@ What stronger systems add:
 ## Field Workflow
 
 1. Select camera source.
-2. Capture or upload image.
-3. Add location/area notes.
-4. Add LiDAR, thermal, or manual measurement notes when available.
-5. Check the P/A/R capture coach, distance/position guidance, and measurement readiness.
-6. Analyze.
-7. Review severity, evidence, risk score, urgency, and recommended measurements.
-8. Match installer.
-9. Export JSON or save report in Supabase.
-10. Reinspect after repair for validation.
+2. Save or upload a multi-photo set.
+3. Capture frontal, rasante, close-up, context, and scale/thermal images when available.
+4. Add location/area notes.
+5. Add LiDAR, thermal, laser, ruler, or manual measurement notes when available.
+6. Check the P/A/R capture coach, distance/position guidance, and measurement readiness.
+7. Analyze the set.
+8. Review severity, evidence, risk score, urgency, and recommended measurements.
+9. Match installer.
+10. Export JSON or save report in Supabase.
+11. Reinspect after repair for validation.
 
 ## Roadmap
 

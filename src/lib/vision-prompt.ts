@@ -6,6 +6,8 @@ Reglas:
 - No inventes mediciones exactas si la imagen no contiene escala, LiDAR o metadata.
 - Para dimensiones de superficie, distingue entre medicion confiable, estimacion visual y dato insuficiente.
 - Si no hay escala visible, LiDAR, laser o medida manual, recomienda que el usuario repita captura con referencia antes de calcular area.
+- Si recibes varias imagenes, usalas como un set: frontal para dimensiones, rasante para textura, close-up para detalle, contexto para ubicacion y termica/escala si aparece.
+- Compara las imagenes entre si; no dupliques defectos por ver la misma falla en varios angulos.
 - Usa severidad "critica" solo si hay riesgo inmediato de seguridad, electricidad, gas, estructura o humedad severa.
 - Si la evidencia visual es insuficiente, baja la confianza y marca requiere_revision_humana=true.
 - Incluye acciones practicas, ordenadas y seguras.
@@ -18,6 +20,7 @@ export function buildUserPrompt(input: {
   locationLabel?: string;
   lidarNotes?: string;
   qualityNotes?: string;
+  imageCount?: number;
 }) {
   return `
 Analiza esta imagen de una obra o espacio construido.
@@ -27,6 +30,7 @@ Contexto de captura:
 - Ubicacion declarada: ${input.locationLabel || "no especificada"}
 - Datos LiDAR/profundidad/medicion: ${input.lidarNotes || "no disponibles"}
 - Calidad de imagen estimada: ${input.qualityNotes || "no especificada"}
+- Imagenes del set: ${input.imageCount || 1}
 
 Prioriza defectos de construccion visibles. Si hay varias fallas, diagnostica la mas urgente y menciona evidencia visual relevante.
 `;

@@ -53,6 +53,15 @@ type QualityScore = {
   contrast: number;
 };
 
+type CaptureItem = {
+  id: string;
+  file: File;
+  url: string;
+  quality: QualityScore;
+  source: string;
+  createdAt: string;
+};
+
 type AnalysisResponse = {
   reportId: string | null;
   diagnosis: InspectionDiagnosis;
@@ -62,6 +71,15 @@ type AnalysisResponse = {
 };
 
 type EvidenceMarker = InspectionDiagnosis["visual_indicators"][number];
+
+const MAX_INSPECTION_IMAGES = 6;
+const INSPECTION_SHOTS = [
+  { label: "Frontal", detail: "plano recto para dimensiones" },
+  { label: "Rasante", detail: "angulo lateral para textura" },
+  { label: "Cerca", detail: "detalle de grieta, humedad o junta" },
+  { label: "Contexto", detail: "area completa y ubicacion" },
+  { label: "Escala", detail: "regla, laser, LiDAR o medida manual" }
+];
 
 const defaultQuality: QualityScore = {
   brightness: 0,
@@ -112,13 +130,19 @@ function markerFallback(analysis: AnalysisResponse | null): EvidenceMarker[] {
   }));
 }
 
-function exportDiagnosis(analysis: AnalysisResponse | null, quality: QualityScore) {
+function exportDiagnosis(analysis: AnalysisResponse | null, quality: QualityScore, captures: CaptureItem[]) {
   if (!analysis) return;
   const payload = {
     exportedAt: new Date().toISOString(),
     reportId: analysis.reportId,
     model: analysis.model,
     quality,
+    captures: captures.map((capture, index) => ({
+      index: index + 1,
+      source: capture.source,
+      createdAt: capture.createdAt,
+      quality: capture.quality
+    })),
     diagnosis: analysis.diagnosis,
     installers: analysis.installers
   };
@@ -308,13 +332,14 @@ export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const captureUrlsRef = useRef<Set<string>>(new Set());
   const [devices, setDevices] = useState<CameraDevice[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [cameraLabel, setCameraLabel] = useState("Camara no seleccionada");
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [quality, setQuality] = useState<QualityScore>(defaultQuality);
-  const [captureFile, setCaptureFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [captures, setCaptures] = useState<CaptureItem[]>([]);
+  const [selectedCaptureId, setSelectedCaptureId] = useState("");
   const [locationLabel, setLocationLabel] = useState("");
   const [lidarNotes, setLidarNotes] = useState("");
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -328,9 +353,14 @@ export default function Home() {
   const evidenceMarkers = markerFallback(analysis);
   const riskScore = severityScore(analysis?.diagnosis.severidad);
   const riskQueue = reports.slice().sort((a, b) => b.riskScore - a.riskScore).slice(0, 4);
+  const selectedCapture = captures.find((capture) => capture.id === selectedCaptureId) || captures[captures.length - 1] || null;
+  const previewUrl = selectedCapture?.url || null;
+  const perfectCaptures = captures.filter((capture) => capture.quality.grade === "P").length;
   const hasMeasurementReference = /\d|cm|mm|m\b|metro|metros|inch|in\b|ft\b|pie|pies|lidar|laser|nivel|escala/i.test(lidarNotes);
-  const dimensionReady = quality.grade === "P" && hasMeasurementReference;
+  const hasDimensionCapture = quality.grade === "P" || perfectCaptures > 0;
+  const dimensionReady = hasDimensionCapture && hasMeasurementReference;
   const dimensionMode = dimensionReady ? "Alta" : hasMeasurementReference ? "Media" : "Solo estimacion";
+  const inspectionCompleteness = Math.min(100, Math.round(((captures.length >= 4 ? 4 : captures.length) / 4) * 100));
   const coachTone = quality.grade === "P" ? "perfect" : quality.grade === "A" ? "good" : "repeat";
   const coachSummary =
     quality.grade === "P"
@@ -340,6 +370,7 @@ export default function Home() {
         : "Repetir para precision";
   const playbook = [
     quality.status === "mala" ? "Repetir captura antes de analizar." : "Captura valida para diagnostico.",
+    captures.length >= 3 ? "Set fotografico suficiente para comparar contexto y detalle." : "Capture frontal, rasante y close-up antes de analizar.",
     coords ? "Ubicacion GPS disponible para matching local." : "GPS opcional para ordenar instaladores por distancia.",
     dimensionReady ? "Medicion lista: hay captura P y referencia de escala." : "Para dimensiones, agregue escala visible, LiDAR o medida manual.",
     analysis?.diagnosis.severidad === "critica" ? "Escalar ahora: pausar uso del area y asignar especialista." : "Registrar evidencia y comparar con futuras capturas.",
@@ -350,6 +381,44 @@ export default function Home() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setIsCameraActive(false);
+  }, []);
+
+  const addCapture = useCallback((capture: CaptureItem) => {
+    captureUrlsRef.current.add(capture.url);
+    setCaptures((current) => {
+      const next = [...current, capture];
+      const overflow = Math.max(0, next.length - MAX_INSPECTION_IMAGES);
+      const removed = overflow ? next.slice(0, overflow) : [];
+      removed.forEach((item) => {
+        URL.revokeObjectURL(item.url);
+        captureUrlsRef.current.delete(item.url);
+      });
+      return overflow ? next.slice(overflow) : next;
+    });
+    setSelectedCaptureId(capture.id);
+    setQuality(capture.quality);
+  }, []);
+
+  const removeCapture = useCallback((id: string) => {
+    setCaptures((current) => {
+      const target = current.find((capture) => capture.id === id);
+      if (target) {
+        URL.revokeObjectURL(target.url);
+        captureUrlsRef.current.delete(target.url);
+      }
+      const next = current.filter((capture) => capture.id !== id);
+      setSelectedCaptureId((selected) => (selected === id ? next[next.length - 1]?.id || "" : selected));
+      if (target && quality === target.quality) setQuality(next[next.length - 1]?.quality || defaultQuality);
+      return next;
+    });
+  }, [quality]);
+
+  const clearCaptures = useCallback(() => {
+    captureUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    captureUrlsRef.current.clear();
+    setCaptures([]);
+    setSelectedCaptureId("");
+    setQuality(defaultQuality);
   }, []);
 
   const refreshDevices = useCallback(async () => {
@@ -409,7 +478,7 @@ export default function Home() {
     }
   }, [refreshDevices, selectedDeviceId, stopStream]);
 
-  const captureFrame = useCallback(async () => {
+  const captureFrame = useCallback(async (saveCapture = true) => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || !video.videoWidth) return null;
@@ -422,17 +491,22 @@ export default function Home() {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const score = scoreFrame(canvas);
     setQuality(score);
+    if (!saveCapture) return null;
 
     const blob = await canvasToBlob(canvas);
     const file = blobToFile(blob);
-    setCaptureFile(file);
-    setPreviewUrl((old) => {
-      if (old) URL.revokeObjectURL(old);
-      return URL.createObjectURL(file);
-    });
+    const item: CaptureItem = {
+      id: crypto.randomUUID(),
+      file,
+      url: URL.createObjectURL(file),
+      quality: score,
+      source: cameraLabel || "Camara activa",
+      createdAt: new Date().toISOString()
+    };
+    addCapture(item);
 
-    return file;
-  }, []);
+    return item;
+  }, [addCapture, cameraLabel]);
 
   const getLocation = useCallback(() => {
     if (!navigator.geolocation) {
@@ -449,26 +523,39 @@ export default function Home() {
   }, []);
 
   const handleUpload = useCallback(
-    async (file: File) => {
+    async (files: FileList | File[]) => {
       stopStream();
-      setCaptureFile(file);
       setCameraLabel("Imagen subida manualmente");
-      setPreviewUrl((old) => {
-        if (old) URL.revokeObjectURL(old);
-        return URL.createObjectURL(file);
-      });
-      try {
-        setQuality(await scoreUploadedImage(file));
-      } catch {
-        setQuality({
-          ...defaultQuality,
-          grade: "A",
-          notes: "Imagen subida; no se pudo calcular calidad local.",
-          guidance: ["Revise que la imagen este enfocada, iluminada y tenga escala si necesita medir."]
-        });
+      const selectedFiles = Array.from(files).slice(0, MAX_INSPECTION_IMAGES);
+      for (const file of selectedFiles) {
+        try {
+          const score = await scoreUploadedImage(file);
+          addCapture({
+            id: crypto.randomUUID(),
+            file,
+            url: URL.createObjectURL(file),
+            quality: score,
+            source: "Imagen subida",
+            createdAt: new Date().toISOString()
+          });
+        } catch {
+          addCapture({
+            id: crypto.randomUUID(),
+            file,
+            url: URL.createObjectURL(file),
+            quality: {
+              ...defaultQuality,
+              grade: "A",
+              notes: "Imagen subida; no se pudo calcular calidad local.",
+              guidance: ["Revise que la imagen este enfocada, iluminada y tenga escala si necesita medir."]
+            },
+            source: "Imagen subida",
+            createdAt: new Date().toISOString()
+          });
+        }
       }
     },
-    [stopStream]
+    [addCapture, stopStream]
   );
 
   const analyze = useCallback(async () => {
@@ -477,17 +564,23 @@ export default function Home() {
     setIsAnalyzing(true);
 
     try {
-      const file = captureFile ?? (await captureFrame());
-      if (!file) throw new Error("Capture o suba una imagen primero.");
+      let analysisCaptures = captures;
+      if (analysisCaptures.length === 0) {
+        const captured = await captureFrame(true);
+        if (captured) analysisCaptures = [captured];
+      }
+      if (analysisCaptures.length === 0) throw new Error("Capture o suba una imagen primero.");
 
       const formData = new FormData();
-      formData.append("image", file);
+      analysisCaptures.slice(0, MAX_INSPECTION_IMAGES).forEach((capture, index) => {
+        formData.append(index === 0 ? "image" : "images", capture.file);
+      });
       formData.append("cameraLabel", cameraLabel);
       formData.append("locationLabel", locationLabel);
       formData.append("lidarNotes", lidarNotes);
       formData.append(
         "qualityNotes",
-        `${quality.grade}/${quality.status}: ${quality.notes}. Brillo ${quality.brightness}, nitidez ${quality.sharpness}, contraste ${quality.contrast}, reflejo ${quality.glarePercent}%, resolucion ${quality.frameWidth}x${quality.frameHeight}, medicion ${dimensionMode}.`
+        `${quality.grade}/${quality.status}: ${quality.notes}. Brillo ${quality.brightness}, nitidez ${quality.sharpness}, contraste ${quality.contrast}, reflejo ${quality.glarePercent}%, resolucion ${quality.frameWidth}x${quality.frameHeight}, imagenes ${analysisCaptures.length}, P ${analysisCaptures.filter((capture) => capture.quality.grade === "P").length}, medicion ${dimensionMode}.`
       );
       if (coords) {
         formData.append("lat", String(coords.lat));
@@ -507,12 +600,17 @@ export default function Home() {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [cameraLabel, captureFile, captureFrame, coords, dimensionMode, lidarNotes, loadOperationalData, locationLabel, quality]);
+  }, [cameraLabel, captureFrame, captures, coords, dimensionMode, lidarNotes, loadOperationalData, locationLabel, quality]);
 
   useEffect(() => {
+    const captureUrls = captureUrlsRef.current;
     refreshDevices().catch(() => undefined);
     loadOperationalData().catch(() => undefined);
-    return () => stopStream();
+    return () => {
+      stopStream();
+      captureUrls.forEach((url) => URL.revokeObjectURL(url));
+      captureUrls.clear();
+    };
   }, [loadOperationalData, refreshDevices, stopStream]);
 
   useEffect(() => {
@@ -524,7 +622,7 @@ export default function Home() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       if (streamRef.current) {
-        captureFrame().catch(() => undefined);
+        captureFrame(false).catch(() => undefined);
       }
     }, 2000);
     return () => window.clearInterval(timer);
@@ -532,9 +630,9 @@ export default function Home() {
 
   const actionText = useMemo(() => {
     if (isAnalyzing) return "Analizando";
-    if (captureFile) return "Analizar captura";
+    if (captures.length > 0) return `Analizar set (${captures.length})`;
     return "Capturar y analizar";
-  }, [captureFile, isAnalyzing]);
+  }, [captures.length, isAnalyzing]);
 
   return (
     <main className="shell">
@@ -650,6 +748,22 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="shot-plan">
+        <div className="section-title">
+          <FileImage size={18} />
+          <h2>Set recomendado: fotos, no video completo</h2>
+        </div>
+        <div className="shot-grid">
+          {INSPECTION_SHOTS.map((shot, index) => (
+            <article className={clsx("shot-card", captures.length > index && "done")} key={shot.label}>
+              <strong>{index + 1}</strong>
+              <span>{shot.label}</span>
+              <small>{shot.detail}</small>
+            </article>
+          ))}
+        </div>
+      </section>
+
       <section className="workspace">
         <div className="camera-panel">
           <div className="camera-toolbar">
@@ -668,9 +782,9 @@ export default function Home() {
               <Camera size={18} />
               Activar
             </button>
-            <button type="button" onClick={captureFrame}>
+            <button type="button" onClick={() => captureFrame(true)}>
               <FileImage size={18} />
-              Capturar
+              Guardar foto
             </button>
           </div>
 
@@ -726,10 +840,12 @@ export default function Home() {
               <input
                 type="file"
                 accept="image/*"
+                multiple
                 onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  handleUpload(file).catch(() => setError("No pude leer la imagen subida."));
+                  const files = event.target.files;
+                  if (!files?.length) return;
+                  handleUpload(files).catch(() => setError("No pude leer la imagen subida."));
+                  event.currentTarget.value = "";
                 }}
               />
             </label>
@@ -737,10 +853,46 @@ export default function Home() {
               {isAnalyzing ? <Loader2 className="spin" size={18} /> : <CheckCircle2 size={18} />}
               {actionText}
             </button>
-            <button type="button" onClick={() => exportDiagnosis(analysis, quality)} disabled={!analysis}>
+            <button type="button" onClick={() => exportDiagnosis(analysis, quality, captures)} disabled={!analysis}>
               <Download size={18} />
               Exportar
             </button>
+            <button type="button" onClick={clearCaptures} disabled={captures.length === 0}>
+              Limpiar set
+            </button>
+          </div>
+
+          <div className="capture-strip">
+            <div className="capture-strip-header">
+              <strong>{captures.length}/{MAX_INSPECTION_IMAGES} fotos</strong>
+              <span>{inspectionCompleteness}% set minimo</span>
+            </div>
+            {captures.length === 0 ? (
+              <p className="muted">Guarde 3-5 fotos: frontal, rasante, close-up, contexto y escala/termica si aplica.</p>
+            ) : (
+              <div className="capture-thumbs">
+                {captures.map((capture, index) => (
+                  <button
+                    className={clsx("capture-thumb", selectedCapture?.id === capture.id && "active")}
+                    key={capture.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCaptureId(capture.id);
+                      setQuality(capture.quality);
+                    }}
+                  >
+                    <img src={capture.url} alt={`Foto ${index + 1}`} />
+                    <span>{index + 1}</span>
+                    <small>{capture.quality.grade}</small>
+                  </button>
+                ))}
+              </div>
+            )}
+            {selectedCapture ? (
+              <button className="text-button" type="button" onClick={() => removeCapture(selectedCapture.id)}>
+                Quitar foto seleccionada
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -805,7 +957,8 @@ export default function Home() {
               Para calcular dimensiones con maxima precision use una regla visible, una medida manual, nivel laser o LiDAR nativo y mantenga la superficie plana al centro del visor.
             </p>
             <div className="measurement-steps">
-              <span className={quality.grade === "P" ? "ok" : ""}>Captura P</span>
+              <span className={captures.length >= 3 ? "ok" : ""}>3+ fotos</span>
+              <span className={hasDimensionCapture ? "ok" : ""}>Captura P</span>
               <span className={hasMeasurementReference ? "ok" : ""}>Escala/LiDAR</span>
               <span className={coords ? "ok" : ""}>GPS</span>
             </div>

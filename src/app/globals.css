@@ -174,6 +174,7 @@ h3 {
 .dashboard,
 .intel-grid,
 .ops-grid,
+.shot-plan,
 .workspace,
 .results {
   display: grid;
@@ -193,6 +194,55 @@ h3 {
 .ops-grid {
   grid-template-columns: 1fr 1fr;
   margin-bottom: 14px;
+}
+
+.shot-plan {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.shot-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.shot-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 11px;
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 2px 9px;
+  min-height: 82px;
+}
+
+.shot-card strong {
+  grid-row: span 2;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.shot-card span {
+  font-weight: 800;
+}
+
+.shot-card small {
+  color: var(--muted);
+  line-height: 1.25;
+}
+
+.shot-card.done {
+  border-color: rgba(66, 211, 146, 0.55);
+  background: rgba(66, 211, 146, 0.1);
 }
 
 .workspace {
@@ -515,6 +565,81 @@ h3 {
   border-top: 1px solid var(--line);
 }
 
+.capture-strip {
+  border-top: 1px solid var(--line);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.capture-strip-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+}
+
+.capture-strip-header strong {
+  color: var(--text);
+}
+
+.capture-thumbs {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.capture-thumb {
+  position: relative;
+  display: block;
+  min-height: 84px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.capture-thumb img {
+  width: 100%;
+  height: 84px;
+  object-fit: cover;
+  display: block;
+}
+
+.capture-thumb span,
+.capture-thumb small {
+  position: absolute;
+  top: 6px;
+  border-radius: 999px;
+  background: rgba(16, 24, 32, 0.82);
+  color: var(--text);
+  font-weight: 800;
+  font-size: 0.72rem;
+}
+
+.capture-thumb span {
+  left: 6px;
+  padding: 4px 7px;
+}
+
+.capture-thumb small {
+  right: 6px;
+  padding: 4px 8px;
+}
+
+.capture-thumb.active {
+  border-color: var(--green);
+  box-shadow: 0 0 0 2px rgba(66, 211, 146, 0.24);
+}
+
+.text-button {
+  justify-self: start;
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+}
+
 .upload-button input {
   display: none;
 }
@@ -684,7 +809,7 @@ h3 {
 
 .measurement-steps {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -796,7 +921,8 @@ ol {
 @media (max-width: 1100px) {
   .dashboard,
   .intel-grid,
-  .ops-grid {
+  .ops-grid,
+  .shot-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -826,9 +952,11 @@ ol {
   .dashboard,
   .intel-grid,
   .ops-grid,
+  .shot-grid,
   .metric-grid,
   .result-grid,
-  .queue-list {
+  .queue-list,
+  .capture-thumbs {
     grid-template-columns: 1fr;
   }
 
