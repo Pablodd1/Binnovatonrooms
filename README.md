@@ -16,7 +16,8 @@ BuildScan AI is a Vercel-ready web MVP for visual construction inspection. It tu
 - Camera capture from phone, laptop webcam, USB/UVC camera, borescope, or other camera exposed by the browser.
 - Manual image upload fallback for FLIR/thermal captures, screenshots, or photos from other devices.
 - Automatic capture refresh every 2 seconds while the camera is active.
-- Client-side image quality scoring for brightness and sharpness.
+- Client-side capture coach with P/A/R grading for brightness, sharpness, glare, contrast, resolution, and framing.
+- Dynamic photo guidance for better position, distance, lighting, surface coverage, and measurement readiness.
 - Visual scan grid overlay for field framing.
 - OpenAI Responses API call with vision input and strict structured JSON output.
 - Diagnosis fields: defect type, severity, location, likely cause, action plan, urgency, required specialist, evidence, measurements, risks, confidence, human-review flag, and visual indicator boxes.
@@ -27,6 +28,7 @@ BuildScan AI is a Vercel-ready web MVP for visual construction inspection. It tu
 - Dashboard KPIs and demo analytics fallback when Supabase is not configured.
 - Recent/risk report queue with assignment-style statuses.
 - Inspection playbook that reacts to image quality, GPS state, and severity.
+- Surface measurement readiness checks for capture quality plus visible scale, LiDAR, laser, or manual measurement notes.
 - JSON export of the current diagnosis for tickets, CRM, insurance, or QA records.
 
 ## Stack
@@ -129,6 +131,7 @@ Production guards already included:
 - Image MIME and size validation.
 - Sanitized prompt/context fields.
 - Bounded GPS coordinates.
+- Client-side capture coach to reduce low-quality images before paid AI calls.
 - Graceful OpenAI error handling.
 - Global app error boundary.
 - Demo fallback data for analytics/report queues when Supabase is not configured.
@@ -280,6 +283,24 @@ Web MVP:
 Important limitation:
 
 - Native iPhone LiDAR depth maps and ARKit scene reconstruction are not fully available to a Vercel web app. This MVP accepts LiDAR/measurement notes manually.
+- Browser-only dimension calculations should be treated as estimates unless the image includes a known scale, manual measurement, laser/LiDAR reading, or future native depth payload.
+
+## Capture Accuracy Guide
+
+The app grades each capture before analysis:
+
+- `P - Best`: strong light, sharpness, contrast, resolution, low glare, and centered surface. Best for diagnosis and measurement when scale/LiDAR notes are present.
+- `A - Good`: usable for diagnosis, but one or two quality signals can improve.
+- `R - Repeat`: low precision because of blur, glare, poor light, weak contrast, low resolution, or bad framing.
+
+For maximum possible surface-dimension accuracy:
+
+- Fill 60-80% of the camera view with the target surface.
+- Keep the phone parallel to the wall/floor/ceiling plane when possible.
+- Use rasante/lateral light to show texture, cracks, swelling, and finish defects.
+- Include a visible ruler, tile, known object, laser measurement, or manual LiDAR/Measure app value.
+- Capture one straight-on image for dimensions and one angled/lateral-light image for defect texture.
+- Use the native app phase for true ARKit/LiDAR scene depth and surface reconstruction.
 
 Native app phase:
 
@@ -328,7 +349,7 @@ What stronger systems add:
 2. Capture or upload image.
 3. Add location/area notes.
 4. Add LiDAR, thermal, or manual measurement notes when available.
-5. Check brightness and sharpness.
+5. Check the P/A/R capture coach, distance/position guidance, and measurement readiness.
 6. Analyze.
 7. Review severity, evidence, risk score, urgency, and recommended measurements.
 8. Match installer.

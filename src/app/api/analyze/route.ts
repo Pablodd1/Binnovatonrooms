@@ -100,7 +100,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const formData = await request.formData();
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return NextResponse.json({ error: "Send multipart form data with an image field named image." }, { status: 400 });
+  }
+
   const image = formData.get("image");
 
   if (!(image instanceof File)) {

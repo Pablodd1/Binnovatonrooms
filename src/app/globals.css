@@ -435,6 +435,81 @@ h3 {
   gap: 8px;
 }
 
+.capture-coach {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  z-index: 2;
+  width: min(230px, calc(100% - 32px));
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--yellow);
+  border-radius: 8px;
+  background: rgba(16, 24, 32, 0.88);
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 2px 10px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.3);
+}
+
+.capture-coach strong {
+  grid-row: span 2;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-size: 1.35rem;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.capture-coach span {
+  align-self: end;
+  font-weight: 800;
+}
+
+.capture-coach small {
+  color: var(--muted);
+}
+
+.capture-coach.perfect {
+  border-left-color: var(--green);
+}
+
+.capture-coach.good {
+  border-left-color: var(--yellow);
+}
+
+.capture-coach.repeat {
+  border-left-color: var(--red);
+}
+
+.distance-rail {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  z-index: 2;
+  transform: translateX(-50%);
+  width: min(520px, calc(100% - 32px));
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(16, 24, 32, 0.78);
+  color: var(--muted);
+  font-size: 0.73rem;
+  text-transform: uppercase;
+  font-weight: 800;
+}
+
+.distance-rail i {
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--green), transparent);
+}
+
 .upload-row {
   justify-content: space-between;
   border-top: 1px solid var(--line);
@@ -474,6 +549,87 @@ h3 {
   gap: 10px;
 }
 
+.grade-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.grade-card,
+.coach-check,
+.measurement-badge,
+.measurement-steps span {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.grade-card {
+  min-height: 78px;
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+
+.grade-card strong {
+  font-size: 1.5rem;
+}
+
+.grade-card span {
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.25;
+}
+
+.grade-card.active {
+  border-color: var(--green);
+  background: rgba(66, 211, 146, 0.12);
+}
+
+.coach-checks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.coach-check {
+  padding: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.coach-check span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.coach-check strong {
+  font-size: 0.86rem;
+}
+
+.coach-check.ok {
+  border-color: rgba(66, 211, 146, 0.5);
+}
+
+.coach-check.warn {
+  border-color: rgba(243, 189, 71, 0.6);
+}
+
+.coach-check.bad {
+  border-color: rgba(255, 105, 95, 0.7);
+}
+
+.coach-guidance {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.45;
+  font-size: 0.86rem;
+}
+
 .metric-grid div,
 .result-grid div,
 .installers article {
@@ -506,6 +662,44 @@ h3 {
 .muted {
   color: var(--muted);
   line-height: 1.45;
+}
+
+.measurement-panel {
+  gap: 10px;
+}
+
+.measurement-badge {
+  width: fit-content;
+  padding: 9px 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--yellow);
+}
+
+.measurement-badge.ready {
+  color: var(--green);
+  border-color: rgba(66, 211, 146, 0.55);
+}
+
+.measurement-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.measurement-steps span {
+  padding: 8px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.measurement-steps span.ok {
+  color: var(--green);
+  border-color: rgba(66, 211, 146, 0.55);
+  background: rgba(66, 211, 146, 0.1);
 }
 
 .hardware p {
@@ -642,5 +836,22 @@ ol {
   .viewer video,
   .viewer img {
     min-height: 360px;
+  }
+
+  .capture-coach {
+    left: 10px;
+    right: 10px;
+    top: 10px;
+    width: auto;
+  }
+
+  .distance-rail {
+    display: none;
+  }
+
+  .grade-grid,
+  .coach-checks,
+  .measurement-steps {
+    grid-template-columns: 1fr;
   }
 }

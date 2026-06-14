@@ -31,11 +31,26 @@ type CameraDevice = {
   label: string;
 };
 
+type QualityGrade = "P" | "A" | "R";
+
+type CaptureCheck = {
+  label: string;
+  status: "ok" | "warn" | "bad";
+  value: string;
+};
+
 type QualityScore = {
   brightness: number;
   sharpness: number;
   status: "buena" | "regular" | "mala";
+  grade: QualityGrade;
   notes: string;
+  checks: CaptureCheck[];
+  guidance: string[];
+  frameWidth: number;
+  frameHeight: number;
+  glarePercent: number;
+  contrast: number;
 };
 
 type AnalysisResponse = {
@@ -52,13 +67,24 @@ const defaultQuality: QualityScore = {
   brightness: 0,
   sharpness: 0,
   status: "regular",
-  notes: "Esperando captura"
+  grade: "A",
+  notes: "Esperando captura",
+  checks: [
+    { label: "Luz", status: "warn", value: "sin muestra" },
+    { label: "Nitidez", status: "warn", value: "sin muestra" },
+    { label: "Encuadre", status: "warn", value: "sin muestra" }
+  ],
+  guidance: ["Active camara o suba una imagen para calcular la guia."],
+  frameWidth: 0,
+  frameHeight: 0,
+  glarePercent: 0,
+  contrast: 0
 };
 
 function qualityLabel(score: QualityScore) {
-  if (score.status === "buena") return "Lista";
-  if (score.status === "regular") return "Mejorable";
-  return "Repetir";
+  if (score.grade === "P") return "P - Best";
+  if (score.grade === "A") return "A - Good";
+  return "R - Repeat";
 }
 
 function percent(value: number) {
@@ -128,6 +154,12 @@ async function canvasToBlob(canvas: HTMLCanvasElement) {
   });
 }
 
+function checkStatus(ok: boolean, warn: boolean): CaptureCheck["status"] {
+  if (ok) return "ok";
+  if (warn) return "warn";
+  return "bad";
+}
+
 function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return defaultQuality;
@@ -143,17 +175,24 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
   sampleCtx.drawImage(canvas, 0, 0, sampleWidth, sampleHeight);
   const data = sampleCtx.getImageData(0, 0, sampleWidth, sampleHeight).data;
   let brightness = 0;
+  let brightPixels = 0;
   const grayscale: number[] = [];
 
   for (let i = 0; i < data.length; i += 4) {
     const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
     grayscale.push(gray);
     brightness += gray;
+    if (gray > 245) brightPixels += 1;
   }
 
   brightness = brightness / grayscale.length;
+  const variance =
+    grayscale.reduce((sum, gray) => sum + (gray - brightness) ** 2, 0) / Math.max(1, grayscale.length - 1);
+  const contrast = Math.sqrt(variance);
+  const glarePercent = (brightPixels / grayscale.length) * 100;
 
   let edgeEnergy = 0;
+  let centerEdgeEnergy = 0;
   for (let y = 1; y < sampleHeight - 1; y += 1) {
     for (let x = 1; x < sampleWidth - 1; x += 1) {
       const idx = y * sampleWidth + x;
@@ -164,28 +203,105 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
         grayscale[idx + 1] +
         grayscale[idx + sampleWidth];
       edgeEnergy += Math.abs(laplacian);
+      if (x > sampleWidth * 0.22 && x < sampleWidth * 0.78 && y > sampleHeight * 0.18 && y < sampleHeight * 0.82) {
+        centerEdgeEnergy += Math.abs(laplacian);
+      }
     }
   }
 
   const sharpness = edgeEnergy / grayscale.length;
+  const centerDetailRatio = centerEdgeEnergy / Math.max(1, edgeEnergy);
+  const megapixels = (canvas.width * canvas.height) / 1_000_000;
   const tooDark = brightness < 55;
   const tooBright = brightness > 220;
+  const highGlare = glarePercent > 6;
+  const lowContrast = contrast < 28;
   const blurry = sharpness < 10;
-  const status = tooDark || tooBright || blurry ? "mala" : sharpness < 17 ? "regular" : "buena";
-  const notes = [
-    tooDark ? "sube la luz" : "",
-    tooBright ? "reduce reflejos" : "",
-    blurry ? "mantenga la camara estable" : ""
-  ]
-    .filter(Boolean)
-    .join(", ");
+  const lowResolution = megapixels < 1.2;
+  const weakFraming = centerDetailRatio < 0.34;
+  const checks: CaptureCheck[] = [
+    {
+      label: "Luz",
+      status: checkStatus(!tooDark && !tooBright, brightness >= 45 && brightness <= 235),
+      value: String(Math.round(brightness))
+    },
+    {
+      label: "Nitidez",
+      status: checkStatus(!blurry && sharpness >= 17, sharpness >= 10),
+      value: String(Math.round(sharpness))
+    },
+    {
+      label: "Reflejo",
+      status: checkStatus(!highGlare, glarePercent <= 10),
+      value: `${glarePercent.toFixed(1)}%`
+    },
+    {
+      label: "Contraste",
+      status: checkStatus(!lowContrast, contrast >= 20),
+      value: String(Math.round(contrast))
+    },
+    {
+      label: "Resolucion",
+      status: checkStatus(!lowResolution && megapixels >= 2, megapixels >= 1.2),
+      value: `${megapixels.toFixed(1)}MP`
+    },
+    {
+      label: "Encuadre",
+      status: checkStatus(!weakFraming && centerDetailRatio >= 0.42, centerDetailRatio >= 0.34),
+      value: `${Math.round(centerDetailRatio * 100)}%`
+    }
+  ];
+  const badCount = checks.filter((check) => check.status === "bad").length;
+  const warnCount = checks.filter((check) => check.status === "warn").length;
+  const grade: QualityGrade = badCount > 0 ? "R" : warnCount > 1 ? "A" : "P";
+  const status = grade === "R" ? "mala" : grade === "A" ? "regular" : "buena";
+  const guidance = [
+    tooDark ? "Suba la luz o use linterna lateral." : "",
+    tooBright || highGlare ? "Baje reflejos: cambie el angulo 15-30 grados." : "",
+    blurry ? "Mantenga el telefono fijo o apoyado antes de capturar." : "",
+    lowContrast ? "Use luz rasante para revelar textura y relieve." : "",
+    lowResolution ? "Acerquese o use una camara de mayor resolucion." : "",
+    weakFraming ? "Centre la falla y llene 60-80% del visor con la superficie." : "",
+    grade === "P" ? "Captura lista: mantenga distancia fija y agregue escala/LiDAR si necesita medidas." : ""
+  ].filter(Boolean);
+  const notes = guidance.slice(0, 2).join(" ") || "imagen usable para analisis";
 
   return {
     brightness: Math.round(brightness),
     sharpness: Math.round(sharpness),
     status,
-    notes: notes || "imagen usable para analisis"
+    grade,
+    notes,
+    checks,
+    guidance,
+    frameWidth: canvas.width,
+    frameHeight: canvas.height,
+    glarePercent: Number(glarePercent.toFixed(1)),
+    contrast: Math.round(contrast)
   };
+}
+
+async function scoreUploadedImage(file: File): Promise<QualityScore> {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    const loaded = new Promise<HTMLImageElement>((resolve, reject) => {
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("No se pudo leer la imagen."));
+    });
+    image.src = url;
+    await loaded;
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return defaultQuality;
+    ctx.drawImage(image, 0, 0);
+    return scoreFrame(canvas);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 export default function Home() {
@@ -212,9 +328,20 @@ export default function Home() {
   const evidenceMarkers = markerFallback(analysis);
   const riskScore = severityScore(analysis?.diagnosis.severidad);
   const riskQueue = reports.slice().sort((a, b) => b.riskScore - a.riskScore).slice(0, 4);
+  const hasMeasurementReference = /\d|cm|mm|m\b|metro|metros|inch|in\b|ft\b|pie|pies|lidar|laser|nivel|escala/i.test(lidarNotes);
+  const dimensionReady = quality.grade === "P" && hasMeasurementReference;
+  const dimensionMode = dimensionReady ? "Alta" : hasMeasurementReference ? "Media" : "Solo estimacion";
+  const coachTone = quality.grade === "P" ? "perfect" : quality.grade === "A" ? "good" : "repeat";
+  const coachSummary =
+    quality.grade === "P"
+      ? "Mejor captura disponible"
+      : quality.grade === "A"
+        ? "Buena, optimizable"
+        : "Repetir para precision";
   const playbook = [
     quality.status === "mala" ? "Repetir captura antes de analizar." : "Captura valida para diagnostico.",
     coords ? "Ubicacion GPS disponible para matching local." : "GPS opcional para ordenar instaladores por distancia.",
+    dimensionReady ? "Medicion lista: hay captura P y referencia de escala." : "Para dimensiones, agregue escala visible, LiDAR o medida manual.",
     analysis?.diagnosis.severidad === "critica" ? "Escalar ahora: pausar uso del area y asignar especialista." : "Registrar evidencia y comparar con futuras capturas.",
     "Usar luz rasante; agregar termica/LiDAR cuando haya humedad, desplome o electricidad."
   ];
@@ -264,17 +391,22 @@ export default function Home() {
       audio: false
     };
 
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    streamRef.current = stream;
-    setIsCameraActive(true);
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
-    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      streamRef.current = stream;
+      setIsCameraActive(true);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
 
-    const track = stream.getVideoTracks()[0];
-    setCameraLabel(track?.label || "Camara activa");
-    await refreshDevices();
+      const track = stream.getVideoTracks()[0];
+      setCameraLabel(track?.label || "Camara activa");
+      await refreshDevices();
+    } catch {
+      setIsCameraActive(false);
+      setError("No pude activar la camara. Revise permisos, HTTPS, o use subir imagen.");
+    }
   }, [refreshDevices, selectedDeviceId, stopStream]);
 
   const captureFrame = useCallback(async () => {
@@ -316,6 +448,29 @@ export default function Home() {
     );
   }, []);
 
+  const handleUpload = useCallback(
+    async (file: File) => {
+      stopStream();
+      setCaptureFile(file);
+      setCameraLabel("Imagen subida manualmente");
+      setPreviewUrl((old) => {
+        if (old) URL.revokeObjectURL(old);
+        return URL.createObjectURL(file);
+      });
+      try {
+        setQuality(await scoreUploadedImage(file));
+      } catch {
+        setQuality({
+          ...defaultQuality,
+          grade: "A",
+          notes: "Imagen subida; no se pudo calcular calidad local.",
+          guidance: ["Revise que la imagen este enfocada, iluminada y tenga escala si necesita medir."]
+        });
+      }
+    },
+    [stopStream]
+  );
+
   const analyze = useCallback(async () => {
     setError("");
     setAnalysis(null);
@@ -330,7 +485,10 @@ export default function Home() {
       formData.append("cameraLabel", cameraLabel);
       formData.append("locationLabel", locationLabel);
       formData.append("lidarNotes", lidarNotes);
-      formData.append("qualityNotes", `${quality.status}: ${quality.notes}. Brillo ${quality.brightness}, nitidez ${quality.sharpness}.`);
+      formData.append(
+        "qualityNotes",
+        `${quality.grade}/${quality.status}: ${quality.notes}. Brillo ${quality.brightness}, nitidez ${quality.sharpness}, contraste ${quality.contrast}, reflejo ${quality.glarePercent}%, resolucion ${quality.frameWidth}x${quality.frameHeight}, medicion ${dimensionMode}.`
+      );
       if (coords) {
         formData.append("lat", String(coords.lat));
         formData.append("lng", String(coords.lng));
@@ -349,7 +507,7 @@ export default function Home() {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [cameraLabel, captureFile, captureFrame, coords, lidarNotes, loadOperationalData, locationLabel, quality]);
+  }, [cameraLabel, captureFile, captureFrame, coords, dimensionMode, lidarNotes, loadOperationalData, locationLabel, quality]);
 
   useEffect(() => {
     refreshDevices().catch(() => undefined);
@@ -526,6 +684,18 @@ export default function Home() {
               </div>
             ) : null}
             <div className="scan-grid" />
+            <div className={clsx("capture-coach", coachTone)}>
+              <strong>{quality.grade}</strong>
+              <span>{coachSummary}</span>
+              <small>{quality.frameWidth ? `${quality.frameWidth} x ${quality.frameHeight}` : "sin captura"}</small>
+            </div>
+            <div className="distance-rail" aria-hidden="true">
+              <span>muy cerca</span>
+              <i />
+              <span>optimo</span>
+              <i />
+              <span>muy lejos</span>
+            </div>
             {evidenceMarkers.map((marker) => (
               <div
                 className="evidence-marker"
@@ -559,13 +729,7 @@ export default function Home() {
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (!file) return;
-                  stopStream();
-                  setCaptureFile(file);
-                  setCameraLabel("Imagen subida manualmente");
-                  setPreviewUrl((old) => {
-                    if (old) URL.revokeObjectURL(old);
-                    return URL.createObjectURL(file);
-                  });
+                  handleUpload(file).catch(() => setError("No pude leer la imagen subida."));
                 }}
               />
             </label>
@@ -582,6 +746,37 @@ export default function Home() {
 
         <aside className="control-panel">
           <div className="panel-block">
+            <h2>Guia visual</h2>
+            <div className="grade-grid">
+              <div className={clsx("grade-card", quality.grade === "P" && "active")}>
+                <strong>P</strong>
+                <span>Best: medir y diagnosticar</span>
+              </div>
+              <div className={clsx("grade-card", quality.grade === "A" && "active")}>
+                <strong>A</strong>
+                <span>Good: diagnostico usable</span>
+              </div>
+              <div className={clsx("grade-card", quality.grade === "R" && "active")}>
+                <strong>R</strong>
+                <span>Repeat: baja precision</span>
+              </div>
+            </div>
+            <div className="coach-checks">
+              {quality.checks.map((check) => (
+                <div className={clsx("coach-check", check.status)} key={check.label}>
+                  <span>{check.label}</span>
+                  <strong>{check.value}</strong>
+                </div>
+              ))}
+            </div>
+            <ul className="coach-guidance">
+              {quality.guidance.slice(0, 4).map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="panel-block">
             <h2>Calidad</h2>
             <div className="metric-grid">
               <div>
@@ -597,6 +792,22 @@ export default function Home() {
             <div className="quality-bars">
               <span style={{ width: `${Math.min(100, quality.brightness / 2.55)}%` }} />
               <span style={{ width: `${Math.min(100, quality.sharpness * 3)}%` }} />
+            </div>
+          </div>
+
+          <div className="panel-block measurement-panel">
+            <h2>Medicion de superficie</h2>
+            <div className={clsx("measurement-badge", dimensionReady && "ready")}>
+              <Ruler size={17} />
+              <strong>{dimensionMode}</strong>
+            </div>
+            <p className="muted">
+              Para calcular dimensiones con maxima precision use una regla visible, una medida manual, nivel laser o LiDAR nativo y mantenga la superficie plana al centro del visor.
+            </p>
+            <div className="measurement-steps">
+              <span className={quality.grade === "P" ? "ok" : ""}>Captura P</span>
+              <span className={hasMeasurementReference ? "ok" : ""}>Escala/LiDAR</span>
+              <span className={coords ? "ok" : ""}>GPS</span>
             </div>
           </div>
 
