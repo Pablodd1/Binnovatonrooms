@@ -113,39 +113,41 @@ export async function POST(request: Request) {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const model = process.env.OPENAI_MODEL || "gpt-5.5";
 
-  const completion = await client.chat.completions.create({
+  const response = (await client.responses.create({
     model,
-    temperature: 0.1,
-    response_format: {
-      type: "json_schema",
-      json_schema: {
+    instructions: SYSTEM_PROMPT,
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: buildUserPrompt({ cameraLabel, locationLabel, lidarNotes, qualityNotes })
+          },
+          {
+            type: "input_image",
+            image_url: dataUrl,
+            detail: "high"
+          }
+        ]
+      }
+    ],
+    text: {
+      verbosity: "low",
+      format: {
+        type: "json_schema",
         name: "buildscan_inspection_diagnosis",
         strict: true,
         schema: inspectionJsonSchema
       }
     },
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: buildUserPrompt({ cameraLabel, locationLabel, lidarNotes, qualityNotes })
-          },
-          {
-            type: "image_url",
-            image_url: {
-              url: dataUrl,
-              detail: "high"
-            }
-          }
-        ]
-      }
-    ]
-  });
+    reasoning: { effort: "low" },
+    max_output_tokens: 1800,
+    store: false,
+    stream: false
+  } as Parameters<typeof client.responses.create>[0])) as { output_text: string };
 
-  const raw = completion.choices[0]?.message?.content;
+  const raw = response.output_text;
   if (!raw) {
     return NextResponse.json({ error: "AI model returned no diagnosis." }, { status: 502 });
   }

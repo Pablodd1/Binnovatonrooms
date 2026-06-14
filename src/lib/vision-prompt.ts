@@ -8,6 +8,7 @@ Reglas:
 - Si la evidencia visual es insuficiente, baja la confianza y marca requiere_revision_humana=true.
 - Incluye acciones practicas, ordenadas y seguras.
 - Recomienda especialista por oficio: plomero, electricista, estructurista, impermeabilizador, albañil, pintor, instalador de pisos, inspector general u otro oficio concreto.
+- Agrega visual_indicators con coordenadas aproximadas porcentuales x/y/width/height para dibujar pistas visuales sobre la imagen. Si no puedes localizar con precision, usa un recuadro amplio y baja la confidence.
 `;
 
 export function buildUserPrompt(input: {

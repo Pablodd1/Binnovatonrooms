@@ -3,18 +3,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  Activity,
+  BarChart3,
   Camera,
   CheckCircle2,
   Crosshair,
   FileImage,
   Loader2,
   MapPin,
+  Radar,
   Ruler,
   ShieldAlert,
+  Sparkles,
+  Thermometer,
   Upload
 } from "lucide-react";
 import clsx from "clsx";
 import type { InspectionDiagnosis, InstallerMatch } from "@/lib/analysis-schema";
+import type { InspectionAnalytics } from "@/lib/analytics";
 
 type CameraDevice = {
   deviceId: string;
@@ -36,6 +42,8 @@ type AnalysisResponse = {
   model: string;
 };
 
+type EvidenceMarker = InspectionDiagnosis["visual_indicators"][number];
+
 const defaultQuality: QualityScore = {
   brightness: 0,
   sharpness: 0,
@@ -47,6 +55,31 @@ function qualityLabel(score: QualityScore) {
   if (score.status === "buena") return "Lista";
   if (score.status === "regular") return "Mejorable";
   return "Repetir";
+}
+
+function percent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function severityScore(severity?: InspectionDiagnosis["severidad"]) {
+  if (severity === "critica") return 100;
+  if (severity === "alta") return 78;
+  if (severity === "media") return 46;
+  if (severity === "baja") return 18;
+  return 0;
+}
+
+function markerFallback(analysis: AnalysisResponse | null): EvidenceMarker[] {
+  if (!analysis) return [];
+  if (analysis.diagnosis.visual_indicators.length > 0) return analysis.diagnosis.visual_indicators;
+  return analysis.diagnosis.evidencia_visual.slice(0, 3).map((label, index) => ({
+    label,
+    confidence: analysis.diagnosis.confianza,
+    x: 18 + index * 18,
+    y: 24 + index * 12,
+    width: 30,
+    height: 22
+  }));
 }
 
 function blobToFile(blob: Blob, name = "inspection-capture.jpg") {
@@ -141,10 +174,13 @@ export default function Home() {
   const [lidarNotes, setLidarNotes] = useState("");
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
+  const [analytics, setAnalytics] = useState<InspectionAnalytics | null>(null);
   const [error, setError] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const severe = analysis?.diagnosis.severidad === "alta" || analysis?.diagnosis.severidad === "critica";
+  const evidenceMarkers = markerFallback(analysis);
+  const riskScore = severityScore(analysis?.diagnosis.severidad);
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -259,6 +295,10 @@ export default function Home() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Fallo el analisis.");
       setAnalysis(payload as AnalysisResponse);
+      fetch("/api/analytics")
+        .then((analyticsResponse) => analyticsResponse.json())
+        .then((nextAnalytics: InspectionAnalytics) => setAnalytics(nextAnalytics))
+        .catch(() => undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fallo inesperado.");
     } finally {
@@ -268,6 +308,10 @@ export default function Home() {
 
   useEffect(() => {
     refreshDevices().catch(() => undefined);
+    fetch("/api/analytics")
+      .then((response) => response.json())
+      .then((payload: InspectionAnalytics) => setAnalytics(payload))
+      .catch(() => undefined);
     return () => stopStream();
   }, [refreshDevices, stopStream]);
 
@@ -293,9 +337,81 @@ export default function Home() {
           <p className="eyebrow">BuildScan AI</p>
           <h1>Inspector visual de obra para telefono, laptop y camaras externas.</h1>
         </div>
-        <div className={clsx("status-pill", quality.status)}>
-          <Crosshair size={18} />
-          <span>{qualityLabel(quality)}</span>
+        <div className="top-actions">
+          <div className={clsx("status-pill", quality.status)}>
+            <Crosshair size={18} />
+            <span>{qualityLabel(quality)}</span>
+          </div>
+          <div className="status-pill neutral">
+            <Activity size={18} />
+            <span>{analytics?.generatedFrom === "supabase" ? "Datos reales" : "Demo analytics"}</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="dashboard">
+        <article className="kpi-card">
+          <span>Reportes</span>
+          <strong>{analytics?.totalReports ?? 0}</strong>
+          <small>{analytics?.severeReports ?? 0} alta/critica</small>
+        </article>
+        <article className="kpi-card">
+          <span>Confianza media</span>
+          <strong>{analytics ? percent(analytics.avgConfidence) : "0%"}</strong>
+          <small>modelo visual pagado</small>
+        </article>
+        <article className="kpi-card">
+          <span>Revision humana</span>
+          <strong>{analytics ? percent(analytics.reviewRate) : "0%"}</strong>
+          <small>casos con baja certeza o riesgo</small>
+        </article>
+        <article className="kpi-card">
+          <span>Urgencia media</span>
+          <strong>{analytics ? Math.round(analytics.avgUrgencyDays) : 0}d</strong>
+          <small>ventana recomendada</small>
+        </article>
+      </section>
+
+      <section className="intel-grid">
+        <div className="analytics-panel">
+          <div className="section-title">
+            <BarChart3 size={18} />
+            <h2>Distribucion de defectos</h2>
+          </div>
+          <div className="bar-list">
+            {(analytics?.byDefect || []).map((bucket) => (
+              <div className="bar-row" key={bucket.label}>
+                <span>{bucket.label}</span>
+                <div><i style={{ width: `${Math.min(100, bucket.count * 18)}%` }} /></div>
+                <strong>{bucket.count}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="analytics-panel">
+          <div className="section-title">
+            <Radar size={18} />
+            <h2>Tendencia semanal</h2>
+          </div>
+          <div className="trend-row">
+            {(analytics?.weeklyTrend || []).map((week) => (
+              <div className="trend-bar" key={week.week} title={`${week.week}: ${week.total}`}>
+                <i style={{ height: `${Math.max(14, week.total * 18)}px` }} />
+                <span>{week.week.slice(5)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="analytics-panel">
+          <div className="section-title">
+            <Sparkles size={18} />
+            <h2>Pistas operativas</h2>
+          </div>
+          <ul className="signal-list">
+            {(analytics?.recentSignals || ["Capture una imagen con luz rasante para generar pistas."]).map((signal) => (
+              <li key={signal}>{signal}</li>
+            ))}
+          </ul>
         </div>
       </section>
 
@@ -332,6 +448,21 @@ export default function Home() {
                 <p>Active una camara o suba una imagen de la obra.</p>
               </div>
             ) : null}
+            <div className="scan-grid" />
+            {evidenceMarkers.map((marker) => (
+              <div
+                className="evidence-marker"
+                key={`${marker.label}-${marker.x}-${marker.y}`}
+                style={{
+                  left: `${marker.x}%`,
+                  top: `${marker.y}%`,
+                  width: `${marker.width}%`,
+                  height: `${marker.height}%`
+                }}
+              >
+                <span>{marker.label}</span>
+              </div>
+            ))}
             {severe ? (
               <div className="danger-overlay">
                 <ShieldAlert size={18} />
@@ -382,6 +513,10 @@ export default function Home() {
               </div>
             </div>
             <p className="muted">{quality.notes}</p>
+            <div className="quality-bars">
+              <span style={{ width: `${Math.min(100, quality.brightness / 2.55)}%` }} />
+              <span style={{ width: `${Math.min(100, quality.sharpness * 3)}%` }} />
+            </div>
           </div>
 
           <div className="panel-block">
@@ -412,6 +547,7 @@ export default function Home() {
             <h2>Hardware soportado</h2>
             <p><Ruler size={16} /> iPhone/iPad con camara y mediciones LiDAR ingresadas.</p>
             <p><Camera size={16} /> Webcam de laptop, USB/UVC, borescope o camara externa compatible.</p>
+            <p><Thermometer size={16} /> FLIR/termica: subir captura o usarla como camara si el sistema la expone.</p>
           </div>
         </aside>
       </section>
@@ -451,6 +587,23 @@ export default function Home() {
                 <span>Confianza</span>
                 <strong>{Math.round(analysis.diagnosis.confianza * 100)}%</strong>
               </div>
+            </div>
+            <div className="risk-meter">
+              <span>Indice de riesgo</span>
+              <div><i style={{ width: `${riskScore}%` }} /></div>
+              <strong>{riskScore}/100</strong>
+            </div>
+            <h3>Evidencia visual</h3>
+            <div className="evidence-list">
+              {analysis.diagnosis.evidencia_visual.map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+            </div>
+            <h3>Mediciones recomendadas</h3>
+            <div className="evidence-list">
+              {analysis.diagnosis.mediciones_recomendadas.map((item) => (
+                <span key={item}>{item}</span>
+              ))}
             </div>
             <h3>Plan de accion</h3>
             <ol>

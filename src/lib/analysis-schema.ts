@@ -25,6 +25,14 @@ export type InspectionDiagnosis = {
   riesgos: string[];
   confianza: number;
   evidencia_visual: string[];
+  visual_indicators: Array<{
+    label: string;
+    confidence: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }>;
   requiere_revision_humana: boolean;
 };
 
@@ -56,6 +64,7 @@ export const inspectionJsonSchema = {
     "riesgos",
     "confianza",
     "evidencia_visual",
+    "visual_indicators",
     "requiere_revision_humana"
   ],
   properties: {
@@ -89,6 +98,24 @@ export const inspectionJsonSchema = {
       minItems: 1,
       maxItems: 8,
       items: { type: "string" }
+    },
+    visual_indicators: {
+      type: "array",
+      minItems: 1,
+      maxItems: 6,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["label", "confidence", "x", "y", "width", "height"],
+        properties: {
+          label: { type: "string" },
+          confidence: { type: "number", minimum: 0, maximum: 1 },
+          x: { type: "number", minimum: 0, maximum: 100 },
+          y: { type: "number", minimum: 0, maximum: 100 },
+          width: { type: "number", minimum: 1, maximum: 100 },
+          height: { type: "number", minimum: 1, maximum: 100 }
+        }
+      }
     },
     requiere_revision_humana: { type: "boolean" }
   }

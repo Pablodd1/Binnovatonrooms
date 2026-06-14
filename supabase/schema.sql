@@ -72,7 +72,7 @@ immutable
 as $$
   select translate(
     coalesce(input, ''),
-    'áéíóúÁÉÍÓÚñÑüÜ',
+    U&'\00E1\00E9\00ED\00F3\00FA\00C1\00C9\00CD\00D3\00DA\00F1\00D1\00FC\00DC',
     'aeiouAEIOUnNuU'
   )
 $$;
@@ -131,6 +131,39 @@ as $$
     n.created_at desc
   limit greatest(1, max_results);
 $$;
+
+create or replace view public.reportes_analytics_daily as
+select
+  date_trunc('day', created_at)::date as day,
+  tipo_defecto,
+  severidad,
+  especialista_requerido,
+  count(*) as report_count,
+  avg((diagnostico->>'confianza')::numeric) as avg_confidence,
+  avg((diagnostico->>'urgencia_dias')::numeric) as avg_urgency_days,
+  count(*) filter (where (diagnostico->>'requiere_revision_humana')::boolean = true) as human_review_count
+from public.reportes
+group by 1, 2, 3, 4;
+
+create or replace view public.reportes_risk_queue as
+select
+  id,
+  created_at,
+  tipo_defecto,
+  severidad,
+  especialista_requerido,
+  location_label,
+  image_url,
+  diagnostico,
+  case severidad
+    when 'critica' then 100
+    when 'alta' then 78
+    when 'media' then 46
+    else 18
+  end as risk_score
+from public.reportes
+where severidad in ('alta', 'critica')
+order by risk_score desc, created_at desc;
 
 alter table public.instaladores enable row level security;
 alter table public.reportes enable row level security;
