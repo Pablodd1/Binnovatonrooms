@@ -1,0 +1,30 @@
+{
+  "name": "buildscan-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI visual inspection MVP for construction quality using cameras, paid vision AI, and installer matching.",
+  "scripts": {
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.108.1",
+    "clsx": "2.1.1",
+    "lucide-react": "1.18.0",
+    "next": "16.2.9",
+    "openai": "6.42.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "25.9.3",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.9",
+    "typescript": "6.0.3"
+  }
+}
