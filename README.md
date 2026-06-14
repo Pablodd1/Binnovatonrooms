@@ -65,7 +65,8 @@ Current MVP:
 - Paid cloud visual diagnosis through OpenAI vision.
 - Strict JSON output for defect type, severity, evidence, urgency, specialist, and visual indicators.
 - Supabase report storage, installer matching, and analytics endpoint.
-- Dashboard KPIs, defect distribution, weekly trend, risk meter, and evidence boxes over the image.
+- Dashboard KPIs, defect distribution, weekly trend, risk meter, recent report queue, and evidence boxes over the image.
+- JSON export for the current diagnosis so field teams can attach results to tickets, CRMs, or insurance workflows.
 
 Open-source/commercial pattern to add next:
 
@@ -91,3 +92,10 @@ Useful public references:
 - Repeat defect detection after repair to validate installer work.
 - Thermal/LiDAR/RGB correlation for hidden moisture and surface deformation.
 - Installer lead quality: response time, repair close rate, recurrence rate, customer rating.
+
+## API routes
+
+- `GET /api/health` checks environment wiring.
+- `GET /api/analytics` returns KPI, severity, defect, specialist, weekly trend, and signal aggregates.
+- `GET /api/reports` returns the recent inspection queue for review/assignment.
+- `POST /api/analyze` receives an image, runs visual diagnosis, stores the report when Supabase is configured, and returns installer matches.

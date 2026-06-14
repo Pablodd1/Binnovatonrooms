@@ -165,6 +165,26 @@ from public.reportes
 where severidad in ('alta', 'critica')
 order by risk_score desc, created_at desc;
 
+create or replace view public.reportes_recent_queue as
+select
+  id,
+  created_at,
+  tipo_defecto,
+  severidad,
+  especialista_requerido,
+  location_label,
+  image_url,
+  (diagnostico->>'confianza')::numeric as confidence,
+  (diagnostico->>'urgencia_dias')::integer as urgency_days,
+  case
+    when severidad = 'critica' then 'asignar'
+    when severidad = 'alta' or (diagnostico->>'requiere_revision_humana')::boolean = true then 'revision'
+    else 'nuevo'
+  end as status
+from public.reportes
+order by created_at desc
+limit 50;
+
 alter table public.instaladores enable row level security;
 alter table public.reportes enable row level security;
 

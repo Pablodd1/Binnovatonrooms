@@ -7,8 +7,11 @@ import {
   BarChart3,
   Camera,
   CheckCircle2,
+  Clock3,
   Crosshair,
+  Download,
   FileImage,
+  ListChecks,
   Loader2,
   MapPin,
   Radar,
@@ -21,6 +24,7 @@ import {
 import clsx from "clsx";
 import type { InspectionDiagnosis, InstallerMatch } from "@/lib/analysis-schema";
 import type { InspectionAnalytics } from "@/lib/analytics";
+import type { ReportSummary } from "@/lib/reports";
 
 type CameraDevice = {
   deviceId: string;
@@ -80,6 +84,31 @@ function markerFallback(analysis: AnalysisResponse | null): EvidenceMarker[] {
     width: 30,
     height: 22
   }));
+}
+
+function exportDiagnosis(analysis: AnalysisResponse | null, quality: QualityScore) {
+  if (!analysis) return;
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    reportId: analysis.reportId,
+    model: analysis.model,
+    quality,
+    diagnosis: analysis.diagnosis,
+    installers: analysis.installers
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `buildscan-report-${analysis.reportId || Date.now()}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function formatAge(dateString: string) {
+  const hours = Math.max(1, Math.round((Date.now() - new Date(dateString).getTime()) / 36e5));
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
 }
 
 function blobToFile(blob: Blob, name = "inspection-capture.jpg") {
@@ -175,12 +204,20 @@ export default function Home() {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [analytics, setAnalytics] = useState<InspectionAnalytics | null>(null);
+  const [reports, setReports] = useState<ReportSummary[]>([]);
   const [error, setError] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const severe = analysis?.diagnosis.severidad === "alta" || analysis?.diagnosis.severidad === "critica";
   const evidenceMarkers = markerFallback(analysis);
   const riskScore = severityScore(analysis?.diagnosis.severidad);
+  const riskQueue = reports.slice().sort((a, b) => b.riskScore - a.riskScore).slice(0, 4);
+  const playbook = [
+    quality.status === "mala" ? "Repetir captura antes de analizar." : "Captura valida para diagnostico.",
+    coords ? "Ubicacion GPS disponible para matching local." : "GPS opcional para ordenar instaladores por distancia.",
+    analysis?.diagnosis.severidad === "critica" ? "Escalar ahora: pausar uso del area y asignar especialista." : "Registrar evidencia y comparar con futuras capturas.",
+    "Usar luz rasante; agregar termica/LiDAR cuando haya humedad, desplome o electricidad."
+  ];
 
   const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -200,6 +237,17 @@ export default function Home() {
     setDevices(cameras);
     if (!selectedDeviceId && cameras[0]) setSelectedDeviceId(cameras[0].deviceId);
   }, [selectedDeviceId]);
+
+  const loadOperationalData = useCallback(async () => {
+    const [analyticsResponse, reportsResponse] = await Promise.all([
+      fetch("/api/analytics"),
+      fetch("/api/reports")
+    ]);
+    const nextAnalytics = (await analyticsResponse.json()) as InspectionAnalytics;
+    const reportsPayload = (await reportsResponse.json()) as { reports: ReportSummary[] };
+    setAnalytics(nextAnalytics);
+    setReports(reportsPayload.reports || []);
+  }, []);
 
   const startCamera = useCallback(async () => {
     setError("");
@@ -295,25 +343,25 @@ export default function Home() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Fallo el analisis.");
       setAnalysis(payload as AnalysisResponse);
-      fetch("/api/analytics")
-        .then((analyticsResponse) => analyticsResponse.json())
-        .then((nextAnalytics: InspectionAnalytics) => setAnalytics(nextAnalytics))
-        .catch(() => undefined);
+      loadOperationalData().catch(() => undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Fallo inesperado.");
     } finally {
       setIsAnalyzing(false);
     }
-  }, [cameraLabel, captureFile, captureFrame, coords, lidarNotes, locationLabel, quality]);
+  }, [cameraLabel, captureFile, captureFrame, coords, lidarNotes, loadOperationalData, locationLabel, quality]);
 
   useEffect(() => {
     refreshDevices().catch(() => undefined);
-    fetch("/api/analytics")
-      .then((response) => response.json())
-      .then((payload: InspectionAnalytics) => setAnalytics(payload))
-      .catch(() => undefined);
+    loadOperationalData().catch(() => undefined);
     return () => stopStream();
-  }, [refreshDevices, stopStream]);
+  }, [loadOperationalData, refreshDevices, stopStream]);
+
+  useEffect(() => {
+    if (!navigator.mediaDevices?.addEventListener) return;
+    navigator.mediaDevices.addEventListener("devicechange", refreshDevices);
+    return () => navigator.mediaDevices.removeEventListener("devicechange", refreshDevices);
+  }, [refreshDevices]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -415,6 +463,35 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="ops-grid">
+        <div className="analytics-panel">
+          <div className="section-title">
+            <ShieldAlert size={18} />
+            <h2>Cola de riesgo</h2>
+          </div>
+          <div className="queue-list">
+            {riskQueue.map((report) => (
+              <article key={report.id} className={clsx("queue-item", report.severity)}>
+                <strong>{report.defectType}</strong>
+                <span>{report.location || "Sin ubicacion"} - {report.specialist}</span>
+                <small><Clock3 size={14} /> {formatAge(report.createdAt)} - riesgo {report.riskScore}</small>
+              </article>
+            ))}
+          </div>
+        </div>
+        <div className="analytics-panel">
+          <div className="section-title">
+            <ListChecks size={18} />
+            <h2>Playbook de inspeccion</h2>
+          </div>
+          <ol className="playbook">
+            {playbook.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
       <section className="workspace">
         <div className="camera-panel">
           <div className="camera-toolbar">
@@ -495,6 +572,10 @@ export default function Home() {
             <button className="primary" type="button" onClick={analyze} disabled={isAnalyzing}>
               {isAnalyzing ? <Loader2 className="spin" size={18} /> : <CheckCircle2 size={18} />}
               {actionText}
+            </button>
+            <button type="button" onClick={() => exportDiagnosis(analysis, quality)} disabled={!analysis}>
+              <Download size={18} />
+              Exportar
             </button>
           </div>
         </div>

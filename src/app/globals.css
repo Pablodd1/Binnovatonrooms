@@ -173,6 +173,7 @@ h3 {
 
 .dashboard,
 .intel-grid,
+.ops-grid,
 .workspace,
 .results {
   display: grid;
@@ -186,6 +187,11 @@ h3 {
 
 .intel-grid {
   grid-template-columns: 1.1fr 0.9fr 1fr;
+  margin-bottom: 14px;
+}
+
+.ops-grid {
+  grid-template-columns: 1fr 1fr;
   margin-bottom: 14px;
 }
 
@@ -241,6 +247,7 @@ h3 {
 
 .bar-list,
 .signal-list,
+.queue-list,
 .installers {
   display: grid;
   gap: 10px;
@@ -295,6 +302,47 @@ h3 {
   padding-left: 18px;
   color: var(--muted);
   line-height: 1.4;
+}
+
+.queue-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.queue-item {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--yellow);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.queue-item.critica,
+.queue-item.alta {
+  border-left-color: var(--red);
+}
+
+.queue-item strong {
+  text-transform: capitalize;
+}
+
+.queue-item span,
+.queue-item small {
+  color: var(--muted);
+}
+
+.queue-item small {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.playbook {
+  margin: 0;
+  padding-left: 22px;
+  color: var(--muted);
+  line-height: 1.55;
 }
 
 .camera-toolbar,
@@ -547,7 +595,8 @@ ol {
 
 @media (max-width: 1100px) {
   .dashboard,
-  .intel-grid {
+  .intel-grid,
+  .ops-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -576,8 +625,10 @@ ol {
 
   .dashboard,
   .intel-grid,
+  .ops-grid,
   .metric-grid,
-  .result-grid {
+  .result-grid,
+  .queue-list {
     grid-template-columns: 1fr;
   }
 
