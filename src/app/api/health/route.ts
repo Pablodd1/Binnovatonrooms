@@ -4,7 +4,7 @@ import { getRuntimeHealth } from "@/lib/server-config";
 export function GET() {
   const health = getRuntimeHealth();
   return NextResponse.json({
-    ok: health.openaiConfigured,
+    ok: health.geminiConfigured,
     ...health
   });
 }

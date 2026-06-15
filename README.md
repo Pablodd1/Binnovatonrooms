@@ -1,6 +1,6 @@
 # BuildScan AI
 
-BuildScan AI is a Vercel-ready web MVP for visual construction inspection. It turns a phone, laptop webcam, or browser-visible external camera into a field inspection console: capture an image, score image quality, send the image to a paid visual AI model, return a strict diagnosis JSON, draw visual evidence markers, save reports in Supabase, and match the issue with qualified installers.
+BuildScan AI is a Vercel-ready web MVP for visual construction inspection. It turns a phone, laptop webcam, or browser-visible external camera into a field inspection console: capture an image, score image quality, send the image to Gemini vision, return a strict diagnosis JSON, draw visual evidence markers, save reports in Supabase, and match the issue with qualified installers.
 
 ## Current Status
 
@@ -20,7 +20,7 @@ BuildScan AI is a Vercel-ready web MVP for visual construction inspection. It tu
 - Client-side capture coach with P/A/R grading for brightness, sharpness, glare, contrast, resolution, and framing.
 - Dynamic photo guidance for better position, distance, lighting, surface coverage, and measurement readiness.
 - Visual scan grid overlay for field framing.
-- OpenAI Responses API call with vision input and strict structured JSON output.
+- Gemini API call with vision input and strict structured JSON output.
 - Diagnosis fields: defect type, severity, location, likely cause, action plan, urgency, required specialist, evidence, measurements, risks, confidence, human-review flag, and visual indicator boxes.
 - Evidence boxes rendered over the captured image.
 - Supabase Storage image upload when configured.
@@ -38,7 +38,7 @@ BuildScan AI is a Vercel-ready web MVP for visual construction inspection. It tu
 - Next.js App Router
 - React
 - TypeScript
-- OpenAI SDK with Responses API
+- Google Gen AI SDK for Gemini API
 - Supabase Postgres and Storage
 - Vercel
 - Lucide icons
@@ -71,8 +71,8 @@ supabase/config.toml                     Local Supabase CLI config
 Create `.env.local` locally and add the same values in Vercel Project Settings.
 
 ```bash
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-5.5
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-3.5-flash
 
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
@@ -85,8 +85,8 @@ NEXT_PUBLIC_SITE_NAME=BuildScan AI
 
 Notes:
 
-- `OPENAI_API_KEY` is required for `/api/analyze`.
-- `OPENAI_MODEL` is configurable. Use the best paid vision model available in your OpenAI account.
+- `GEMINI_API_KEY` is required for `/api/analyze`.
+- `GEMINI_MODEL` is configurable. Default is `gemini-3.5-flash`; use a stronger Gemini Pro model if your account has access and latency/cost fit the workflow.
 - Supabase variables are required for persistence, image storage, analytics from real reports, and installer matching.
 - Without Supabase variables, `/api/analytics` and `/api/reports` return demo data so the UI remains usable.
 - `NEXT_PUBLIC_SITE_NAME` is optional and useful if the app is later white-labeled.
@@ -96,7 +96,7 @@ Recommended future production variables:
 - `AUTH_SECRET`: required when authentication/user accounts are added.
 - `NEXT_PUBLIC_SENTRY_DSN` and `SENTRY_AUTH_TOKEN`: recommended for production error monitoring.
 - `SUPABASE_SIGNED_URLS=true`: recommended when private customer images replace public MVP storage.
-- `OPENAI_PROJECT` or provider-specific billing/project variables: useful for account separation if your AI provider supports it.
+- Provider-specific billing/project variables: useful for account separation if your AI provider supports it.
 
 ## Local Development
 
@@ -134,9 +134,9 @@ Before exposing the app to real users:
 - Run `supabase/schema.sql` in the production Supabase project.
 - Replace demo installers with real verified installers.
 - Confirm the `inspection-images` storage policy fits the business model. Public URLs are convenient for MVP demos; signed URLs are better for private customer data.
-- Test `/api/health`; `ok` should be `true` when OpenAI is configured.
+- Test `/api/health`; `ok` should be `true` when Gemini is configured.
 - Test `/api/analyze` with JPEG, PNG, and WebP images under 10MB.
-- Confirm Vercel Function logs do not show OpenAI, Supabase, or storage failures.
+- Confirm Vercel Function logs do not show Gemini, Supabase, or storage failures.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` server-only. Never expose it in client code.
 - Add auth before storing customer-identifiable production reports.
 
@@ -149,7 +149,7 @@ Production guards already included:
 - Sanitized prompt/context fields.
 - Bounded GPS coordinates.
 - Client-side capture coach to reduce low-quality images before paid AI calls.
-- Graceful OpenAI error handling.
+- Graceful Gemini API error handling.
 - Global app error boundary.
 - Demo fallback data for analytics/report queues when Supabase is not configured.
 
@@ -246,9 +246,9 @@ Security:
 
 ### `GET /api/health`
 
-Returns whether OpenAI and Supabase are configured.
+Returns whether Gemini and Supabase are configured.
 
-Production expectation: `ok` is `true` only when OpenAI is configured. Supabase and Storage readiness are returned separately.
+Production expectation: `ok` is `true` only when Gemini is configured. Supabase and Storage readiness are returned separately.
 
 ### `POST /api/analyze`
 
@@ -278,7 +278,7 @@ Protections:
 - Allows up to 6 images and 30MB total per inspection set.
 - Sanitizes text fields.
 - Bounds GPS coordinates.
-- Uses `store: false` on the OpenAI Responses API call.
+- Sends inline image parts to Gemini and requests JSON output.
 
 ### `GET /api/analytics`
 
@@ -461,5 +461,5 @@ Operations:
 - MDN `getUserMedia()` for camera streams.
 - MDN `enumerateDevices()` for connected media inputs.
 - Apple ARKit scene reconstruction and scene depth for native LiDAR workflows.
-- OpenAI Responses API, image inputs, and Structured Outputs.
+- Gemini API image understanding and structured outputs.
 - Roboflow Universe datasets for cracks, damp walls, corrosion, delamination, paint damage, wall defects, and construction inspection.

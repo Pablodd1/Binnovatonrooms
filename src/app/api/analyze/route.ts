@@ -1,9 +1,9 @@
-import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
 import { inspectionJsonSchema, type InspectionDiagnosis } from "@/lib/analysis-schema";
 import { matchInstallers } from "@/lib/installer-match";
 import { checkRateLimit, getClientIp, imageExtension, sanitizeText, validateImageFile } from "@/lib/request-guards";
-import { requireOpenAIConfig } from "@/lib/server-config";
+import { requireGeminiConfig } from "@/lib/server-config";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { buildUserPrompt, SYSTEM_PROMPT } from "@/lib/vision-prompt";
 
@@ -25,11 +25,16 @@ function boundedCoordinate(value: number | null, min: number, max: number) {
   return value;
 }
 
-async function fileToDataUrl(file: File) {
+async function fileToGeminiPart(file: File) {
   const bytes = Buffer.from(await file.arrayBuffer());
   const mimeType = file.type || "image/jpeg";
   return {
-    dataUrl: `data:${mimeType};base64,${bytes.toString("base64")}`,
+    part: {
+      inlineData: {
+        mimeType,
+        data: bytes.toString("base64")
+      }
+    },
     bytes,
     mimeType
   };
@@ -166,56 +171,39 @@ export async function POST(request: Request) {
   const lat = boundedCoordinate(numberOrNull(formData.get("lat")), -90, 90);
   const lng = boundedCoordinate(numberOrNull(formData.get("lng")), -180, 180);
 
-  let openaiConfig: ReturnType<typeof requireOpenAIConfig>;
+  let geminiConfig: ReturnType<typeof requireGeminiConfig>;
   try {
-    openaiConfig = requireOpenAIConfig();
+    geminiConfig = requireGeminiConfig();
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "OpenAI is not configured." }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Gemini is not configured." }, { status: 500 });
   }
 
-  const imagePayloads = await Promise.all(imageEntries.map((image) => fileToDataUrl(image)));
-  const client = new OpenAI({ apiKey: openaiConfig.apiKey });
-  const model = openaiConfig.model;
+  const imagePayloads = await Promise.all(imageEntries.map((image) => fileToGeminiPart(image)));
+  const client = new GoogleGenAI({ apiKey: geminiConfig.apiKey });
+  const model = geminiConfig.model;
 
   let raw = "";
   try {
-    const response = (await client.responses.create({
+    const response = await client.models.generateContent({
       model,
-      instructions: SYSTEM_PROMPT,
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: buildUserPrompt({ cameraLabel, locationLabel, lidarNotes, qualityNotes, imageCount: imagePayloads.length })
-            },
-            ...imagePayloads.map((payload) => ({
-              type: "input_image",
-              image_url: payload.dataUrl,
-              detail: "high"
-            }))
-          ]
-        }
+      contents: [
+        { text: `${SYSTEM_PROMPT}\n\n${buildUserPrompt({ cameraLabel, locationLabel, lidarNotes, qualityNotes, imageCount: imagePayloads.length })}` },
+        ...imagePayloads.map((payload) => payload.part)
       ],
-      text: {
-        verbosity: "low",
-        format: {
-          type: "json_schema",
-          name: "buildscan_inspection_diagnosis",
-          strict: true,
-          schema: inspectionJsonSchema
+      config: {
+        responseMimeType: "application/json",
+        responseFormat: {
+          text: {
+            mimeType: "application/json",
+            schema: inspectionJsonSchema
+          }
         }
-      },
-      reasoning: { effort: "low" },
-      max_output_tokens: 1800,
-      store: false,
-      stream: false
-    } as Parameters<typeof client.responses.create>[0])) as { output_text: string };
+      }
+    } as Parameters<typeof client.models.generateContent>[0]);
 
-    raw = response.output_text;
+    raw = response.text || "";
   } catch (error) {
-    console.error("OpenAI analysis failed", error);
+    console.error("Gemini analysis failed", error);
     return NextResponse.json(
       { error: "The visual analysis service is temporarily unavailable." },
       { status: 502 }
