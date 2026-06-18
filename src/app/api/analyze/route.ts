@@ -192,12 +192,7 @@ export async function POST(request: Request) {
       ],
       config: {
         responseMimeType: "application/json",
-        responseFormat: {
-          text: {
-            mimeType: "application/json",
-            schema: inspectionJsonSchema
-          }
-        }
+        responseSchema: inspectionJsonSchema
       }
     } as Parameters<typeof client.models.generateContent>[0]);
 
