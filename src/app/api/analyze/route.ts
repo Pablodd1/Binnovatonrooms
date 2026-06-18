@@ -25,6 +25,16 @@ function boundedCoordinate(value: number | null, min: number, max: number) {
   return value;
 }
 
+function isUploadedImage(entry: FormDataEntryValue | null): entry is File {
+  if (!entry || typeof entry !== "object") return false;
+  const candidate = entry as File;
+  return (
+    typeof candidate.arrayBuffer === "function" &&
+    typeof candidate.size === "number" &&
+    typeof candidate.type === "string"
+  );
+}
+
 async function fileToGeminiPart(file: File) {
   const bytes = Buffer.from(await file.arrayBuffer());
   const mimeType = file.type || "image/jpeg";
@@ -140,9 +150,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Send multipart form data with an image field named image." }, { status: 400 });
   }
 
-  const imageEntries = [formData.get("image"), ...formData.getAll("images")].filter(
-    (entry): entry is File => entry instanceof File
-  );
+  const imageEntries = [formData.get("image"), ...formData.getAll("images")].filter(isUploadedImage);
 
   if (imageEntries.length === 0) {
     return NextResponse.json({ error: "Upload at least one image field named image or images." }, { status: 400 });
