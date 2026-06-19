@@ -12,6 +12,7 @@ export const severities = ["baja", "media", "alta", "critica"] as const;
 
 export type DefectType = (typeof defectTypes)[number];
 export type Severity = (typeof severities)[number];
+export type DetailLevel = "standard" | "detailed" | "forensic";
 
 export type InspectionDiagnosis = {
   tipo_defecto: DefectType;
@@ -34,6 +35,16 @@ export type InspectionDiagnosis = {
     height: number;
   }>;
   requiere_revision_humana: boolean;
+  analysis_metadata?: {
+    detail_level: DetailLevel;
+    image_count: number;
+    analysis_pass: number;
+    processing_time_ms?: number;
+    total_defects_found?: number;
+    micro_defects_detected?: string[];
+    surface_conditions?: string[];
+    environmental_factors?: string[];
+  };
 };
 
 export type InstallerMatch = {
@@ -96,13 +107,13 @@ export const inspectionJsonSchema = {
     evidencia_visual: {
       type: "array",
       minItems: 1,
-      maxItems: 8,
+      maxItems: 12,
       items: { type: "string" }
     },
     visual_indicators: {
       type: "array",
       minItems: 1,
-      maxItems: 6,
+      maxItems: 8,
       items: {
         type: "object",
         additionalProperties: false,

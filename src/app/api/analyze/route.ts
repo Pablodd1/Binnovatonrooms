@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
-import { inspectionJsonSchema, type InspectionDiagnosis } from "@/lib/analysis-schema";
+import { inspectionJsonSchema, type InspectionDiagnosis, type DetailLevel } from "@/lib/analysis-schema";
 import { matchInstallers } from "@/lib/installer-match";
 import {
   checkRateLimit,
@@ -16,14 +16,17 @@ import {
 } from "@/lib/request-guards";
 import { requireGeminiConfig } from "@/lib/server-config";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { buildUserPrompt, SYSTEM_PROMPT } from "@/lib/vision-prompt";
+import { buildUserPrompt, buildFollowUpPrompt, SYSTEM_PROMPT } from "@/lib/vision-prompt";
 import { auth } from "@/lib/auth";
 import { createRequestLogger, generateRequestId } from "@/lib/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const GEMINI_TIMEOUT_MS = 30_000;
+const GEMINI_TIMEOUT_MS = 45_000;
+const GEMINI_RETRY_COUNT = 2;
+const GEMINI_RETRY_DELAY_MS = 2_000;
+const DETAIL_LEVELS: DetailLevel[] = ["standard", "detailed", "forensic"];
 
 async function fileToGeminiPart(file: File) {
   const bytes = Buffer.from(await file.arrayBuffer());
@@ -132,6 +135,129 @@ async function saveReport(input: {
   return reportId;
 }
 
+async function callGeminiWithRetry(
+  client: GoogleGenAI,
+  model: string,
+  contents: Parameters<GoogleGenAI["models"]["generateContent"]>[0]["contents"],
+  config: Parameters<GoogleGenAI["models"]["generateContent"]>[0]["config"],
+  log: ReturnType<typeof createRequestLogger>
+): Promise<{ raw: string; durationMs: number }> {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= GEMINI_RETRY_COUNT; attempt++) {
+    const startTime = Date.now();
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), GEMINI_TIMEOUT_MS);
+
+    try {
+      log.info({ attempt, model }, "Gemini API call starting");
+
+      const response = await client.models.generateContent({
+        model,
+        contents,
+        config,
+      } as Parameters<typeof client.models.generateContent>[0]);
+
+      clearTimeout(timeoutId);
+      const raw = response.text || "";
+      const durationMs = Date.now() - startTime;
+
+      if (!raw) {
+        log.warn({ attempt, durationMs }, "Gemini returned empty response");
+        lastError = new Error("Empty response");
+        if (attempt < GEMINI_RETRY_COUNT) {
+          await new Promise((r) => setTimeout(r, GEMINI_RETRY_DELAY_MS * attempt));
+          continue;
+        }
+        return { raw: "", durationMs };
+      }
+
+      log.info({ attempt, durationMs, rawLength: raw.length }, "Gemini API call succeeded");
+      return { raw, durationMs };
+    } catch (error: unknown) {
+      clearTimeout(timeoutId);
+      lastError = error;
+      const durationMs = Date.now() - startTime;
+      const message = error instanceof Error ? error.message : "Unknown error";
+      log.error({ attempt, durationMs, error: message }, "Gemini API call failed");
+
+      if (error instanceof Error && error.name === "AbortError") {
+        log.warn({ attempt }, "Gemini call timed out");
+        if (attempt < GEMINI_RETRY_COUNT) {
+          await new Promise((r) => setTimeout(r, GEMINI_RETRY_DELAY_MS * attempt));
+          continue;
+        }
+        return { raw: "", durationMs };
+      }
+
+      if (attempt < GEMINI_RETRY_COUNT) {
+        const delay = GEMINI_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+        log.info({ attempt, delay }, "Retrying Gemini call");
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+function detectDetailLevel(lidarNotes: string, qualityNotes: string, imageCount: number): DetailLevel {
+  const hasScale = /\d|cm|mm|m\b|metro|metros|inch|in\b|ft\b|pie|pies|lidar|laser|nivel|escala/i.test(lidarNotes);
+  const hasHighRes = qualityNotes.includes("P") || qualityNotes.includes("2MP") || qualityNotes.includes("4MP");
+  const hasMultipleImages = imageCount >= 3;
+
+  if (hasScale && hasHighRes && hasMultipleImages) return "forensic";
+  if (hasScale || hasHighRes || hasMultipleImages) return "detailed";
+  return "standard";
+}
+
+function mergeDiagnoses(
+  first: InspectionDiagnosis,
+  second: InspectionDiagnosis | null
+): InspectionDiagnosis {
+  if (!second) return first;
+
+  const merged = { ...first };
+
+  if (second.severidad === "critica" || (first.severidad !== "critica" && second.severidad === "alta")) {
+    merged.severidad = second.severidad;
+  }
+
+  merged.confianza = Math.max(first.confianza, second.confianza);
+
+  if (second.requiere_revision_humana) merged.requiere_revision_humana = true;
+
+  const evidenceSet = new Set([...first.evidencia_visual, ...second.evidencia_visual]);
+  merged.evidencia_visual = [...evidenceSet].slice(0, 12);
+
+  const indicatorSet = new Map(
+    first.visual_indicators.map((ind) => [`${ind.label}-${Math.round(ind.x)}-${Math.round(ind.y)}`, ind])
+  );
+  for (const ind of second.visual_indicators) {
+    const key = `${ind.label}-${Math.round(ind.x)}-${Math.round(ind.y)}`;
+    if (!indicatorSet.has(key) || ind.confidence > (indicatorSet.get(key)?.confidence || 0)) {
+      indicatorSet.set(key, ind);
+    }
+  }
+  merged.visual_indicators = [...indicatorSet.values()].slice(0, 8);
+
+  if (second.causa_probable && second.causa_probable.length > first.causa_probable.length) {
+    merged.causa_probable = second.causa_probable;
+  }
+
+  const riskSet = new Set([...first.riesgos, ...second.riesgos]);
+  merged.riesgos = [...riskSet].slice(0, 6);
+
+  const solutionSet = new Set([...first.solucion_paso_a_paso, ...second.solucion_paso_a_paso]);
+  merged.solucion_paso_a_paso = [...solutionSet].slice(0, 8);
+
+  const measurementSet = new Set([...first.mediciones_recomendadas, ...second.mediciones_recomendadas]);
+  merged.mediciones_recomendadas = [...measurementSet].slice(0, 6);
+
+  return merged;
+}
+
 export async function POST(request: Request) {
   const requestId = generateRequestId();
   const log = createRequestLogger(requestId, request);
@@ -193,6 +319,12 @@ export async function POST(request: Request) {
   const qualityNotes = sanitizeText(formData.get("qualityNotes"), "", 500);
   const lat = boundedCoordinate(numberOrNull(formData.get("lat")), -90, 90);
   const lng = boundedCoordinate(numberOrNull(formData.get("lng")), -180, 180);
+  const requestedDetailLevel = formData.get("detailLevel") as DetailLevel | null;
+  const detailLevel = requestedDetailLevel && DETAIL_LEVELS.includes(requestedDetailLevel)
+    ? requestedDetailLevel
+    : detectDetailLevel(lidarNotes, qualityNotes, imageEntries.length);
+
+  log.info({ detailLevel, imageCount: imageEntries.length, cameraLabel, locationLabel }, "Analysis parameters");
 
   let geminiConfig: ReturnType<typeof requireGeminiConfig>;
   try {
@@ -206,69 +338,120 @@ export async function POST(request: Request) {
   const client = new GoogleGenAI({ apiKey: geminiConfig.apiKey });
   const model = geminiConfig.model;
 
-  let raw = "";
-  try {
-    const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), GEMINI_TIMEOUT_MS);
+  const startTime = Date.now();
 
-    const response = await client.models.generateContent({
+  const userPrompt = buildUserPrompt({
+    cameraLabel,
+    locationLabel,
+    lidarNotes,
+    qualityNotes,
+    imageCount: imagePayloads.length,
+    detailLevel,
+  });
+
+  let firstPassRaw = "";
+  let firstPassDurationMs = 0;
+  try {
+    const result = await callGeminiWithRetry(
+      client,
       model,
-      contents: [
-        {
-          text: `${SYSTEM_PROMPT}\n\n${buildUserPrompt({
-            cameraLabel,
-            locationLabel,
-            lidarNotes,
-            qualityNotes,
-            imageCount: imagePayloads.length,
-          })}`,
-        },
+      [
+        { text: `${SYSTEM_PROMPT}\n\n${userPrompt}` },
         ...imagePayloads.map((payload) => payload.part),
       ],
-      config: {
+      {
         responseMimeType: "application/json",
         responseSchema: inspectionJsonSchema,
       },
-    } as Parameters<typeof client.models.generateContent>[0]);
-
-    clearTimeout(timeoutId);
-    raw = response.text || "";
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    log.error({ error: message }, "Gemini analysis failed");
-
-    if (error instanceof Error && error.name === "AbortError") {
-      return NextResponse.json(
-        { error: "The visual analysis timed out. Try with fewer or smaller images." },
-        { status: 504 }
-      );
-    }
-
+      log
+    );
+    firstPassRaw = result.raw;
+    firstPassDurationMs = result.durationMs;
+  } catch (error) {
+    log.error({ error: error instanceof Error ? error.message : "Unknown" }, "Gemini first pass failed");
     return NextResponse.json(
       { error: "The visual analysis service is temporarily unavailable." },
       { status: 502 }
     );
   }
 
-  if (!raw) {
-    log.warn("AI model returned empty response");
+  if (!firstPassRaw) {
+    log.warn("AI model returned empty response on first pass");
     return NextResponse.json({ error: "AI model returned no diagnosis." }, { status: 502 });
   }
 
-  let diagnosis: InspectionDiagnosis;
+  let firstPassDiagnosis: InspectionDiagnosis;
   try {
-    diagnosis = JSON.parse(raw) as InspectionDiagnosis;
+    firstPassDiagnosis = JSON.parse(firstPassRaw) as InspectionDiagnosis;
   } catch (error) {
-    log.error({ raw: raw.slice(0, 200) }, "Failed to parse model response");
+    log.error({ raw: firstPassRaw.slice(0, 200) }, "Failed to parse first pass response");
     return NextResponse.json(
       { error: "The visual analysis service returned an invalid diagnosis." },
       { status: 502 }
     );
   }
 
+  let finalDiagnosis = firstPassDiagnosis;
+  let secondPassDurationMs = 0;
+
+  if (imageEntries.length >= 2 && (detailLevel === "detailed" || detailLevel === "forensic")) {
+    log.info("Starting second pass analysis for multi-image forensic review");
+    try {
+      const followUpPrompt = buildFollowUpPrompt({
+        firstPassDiagnosis: firstPassDiagnosis,
+        imageCount: imagePayloads.length,
+        cameraLabel,
+        locationLabel,
+      });
+
+      const result = await callGeminiWithRetry(
+        client,
+        model,
+        [
+          { text: `${SYSTEM_PROMPT}\n\n${followUpPrompt}` },
+          ...imagePayloads.map((payload) => payload.part),
+        ],
+        {
+          responseMimeType: "application/json",
+          responseSchema: inspectionJsonSchema,
+        },
+        log
+      );
+
+      secondPassDurationMs = result.durationMs;
+
+      if (result.raw) {
+        const secondPassDiagnosis = JSON.parse(result.raw) as InspectionDiagnosis;
+        finalDiagnosis = mergeDiagnoses(firstPassDiagnosis, secondPassDiagnosis);
+        log.info({ firstPassConfidence: firstPassDiagnosis.confianza, secondPassConfidence: secondPassDiagnosis.confianza }, "Second pass completed");
+      }
+    } catch (error) {
+      log.warn({ error: error instanceof Error ? error.message : "Unknown" }, "Second pass failed, using first pass results");
+    }
+  }
+
+  const totalDurationMs = Date.now() - startTime;
+
+  finalDiagnosis.analysis_metadata = {
+    detail_level: detailLevel,
+    image_count: imagePayloads.length,
+    analysis_pass: secondPassDurationMs > 0 ? 2 : 1,
+    processing_time_ms: totalDurationMs,
+    total_defects_found: finalDiagnosis.evidencia_visual.length,
+    micro_defects_detected: finalDiagnosis.riesgos.filter(
+      (r) => r.includes("micro") || r.includes("fina") || r.includes("incipiente") || r.includes("incip")
+    ),
+    surface_conditions: finalDiagnosis.mediciones_recomendadas.filter(
+      (m) => m.includes("superficie") || m.includes("textura") || m.includes("acabado")
+    ),
+    environmental_factors: finalDiagnosis.riesgos.filter(
+      (r) => r.includes("humedad") || r.includes("temperatura") || r.includes("condensacion")
+    ),
+  };
+
   const [imageUrls, installers] = await Promise.all([
     Promise.all(imagePayloads.map((payload) => storeImage(payload.bytes, payload.mimeType))),
-    matchInstallers({ diagnosis, lat, lng }),
+    matchInstallers({ diagnosis: finalDiagnosis, lat, lng }),
   ]);
 
   const imageUrl = imageUrls[0] ?? null;
@@ -282,6 +465,9 @@ export async function POST(request: Request) {
     glarePercent: numberOrNull(formData.get("quality-glare")),
     contrast: numberOrNull(formData.get("quality-contrast")),
     grade: sanitizeText(formData.get("quality-grade"), "", 1),
+    detailLevel,
+    analysisDurationMs: totalDurationMs,
+    analysisPasses: secondPassDurationMs > 0 ? 2 : 1,
     images: imageEntries.map((image, index) => ({
       index: index + 1,
       sizeBytes: image.size,
@@ -298,7 +484,7 @@ export async function POST(request: Request) {
   }));
 
   const reportId = await saveReport({
-    diagnosis,
+    diagnosis: finalDiagnosis,
     imageUrl,
     images: reportImages,
     cameraLabel,
@@ -309,14 +495,25 @@ export async function POST(request: Request) {
     userId,
   });
 
-  log.info({ reportId, model, userId: userId || "anonymous" }, "Analysis complete");
+  log.info({
+    reportId,
+    model,
+    detailLevel,
+    durationMs: totalDurationMs,
+    firstPassMs: firstPassDurationMs,
+    secondPassMs: secondPassDurationMs,
+    userId: userId || "anonymous",
+    totalDefects: finalDiagnosis.evidencia_visual.length,
+  }, "Analysis complete");
 
   return NextResponse.json({
     reportId,
-    diagnosis,
+    diagnosis: finalDiagnosis,
     installers,
     imageUrl,
     imageUrls,
     model,
+    detailLevel,
+    analysisDurationMs: totalDurationMs,
   });
 }

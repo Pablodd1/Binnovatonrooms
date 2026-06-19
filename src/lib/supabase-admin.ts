@@ -1,6 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
-export function getSupabaseAdmin() {
+let cachedAdminClient: SupabaseClient | null = null;
+
+export function getSupabaseAdmin(): SupabaseClient | null {
+  if (cachedAdminClient) return cachedAdminClient;
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -8,7 +13,7 @@ export function getSupabaseAdmin() {
     return null;
   }
 
-  return createClient(url, serviceKey, {
+  cachedAdminClient = createClient(url, serviceKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -17,9 +22,15 @@ export function getSupabaseAdmin() {
       schema: "public",
     },
   });
+
+  return cachedAdminClient;
 }
 
-export function getSupabaseAnonClient() {
+let cachedAnonClient: SupabaseClient | null = null;
+
+export function getSupabaseAnonClient(): SupabaseClient | null {
+  if (cachedAnonClient) return cachedAnonClient;
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -27,15 +38,17 @@ export function getSupabaseAnonClient() {
     return null;
   }
 
-  return createClient(url, anonKey, {
+  cachedAnonClient = createClient(url, anonKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
     },
   });
+
+  return cachedAnonClient;
 }
 
-export function getStorageBucket() {
+export function getStorageBucket(): string {
   return process.env.SUPABASE_BUCKET || "inspection-images";
 }
 
