@@ -1,13 +1,22 @@
 import { NextResponse } from "next/server";
 import { demoReports, normalizeReports } from "@/lib/reports";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { auth } from "@/lib/auth";
+import { createRequestLogger, generateRequestId } from "@/lib/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const requestId = generateRequestId();
+  const log = createRequestLogger(requestId, request);
+
+  const session = await auth();
+  log.info({ userId: session?.user?.id || "anonymous" }, "Reports request");
+
   const supabase = getSupabaseAdmin();
   if (!supabase) {
+    log.info("Using demo reports data");
     return NextResponse.json({ reports: demoReports(), generatedFrom: "demo" });
   }
 
@@ -18,9 +27,10 @@ export async function GET() {
     .limit(25);
 
   if (error) {
-    console.error("Reports query failed", error);
+    log.error({ error: error.message }, "Reports query failed");
     return NextResponse.json({ reports: demoReports(), generatedFrom: "demo" });
   }
 
+  log.info({ reportCount: data?.length || 0 }, "Reports data fetched");
   return NextResponse.json({ reports: normalizeReports(data || []), generatedFrom: "supabase" });
 }

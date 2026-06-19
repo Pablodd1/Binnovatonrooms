@@ -1,14 +1,19 @@
 {
   "name": "buildscan-ai",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "AI visual inspection MVP for construction quality using cameras, paid vision AI, and installer matching.",
+  "description": "AI visual inspection for construction quality using cameras, Gemini AI, and installer matching.",
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
     "preflight": "npm run lint && npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "supabase:start": "npx supabase start",
     "supabase:reset": "npx supabase db reset",
     "supabase:push": "npx supabase db push"
@@ -16,19 +21,25 @@
   "dependencies": {
     "@google/genai": "1.35.0",
     "@supabase/supabase-js": "2.108.1",
+    "@vercel/kv": "^3.0.0",
     "clsx": "2.1.1",
     "lucide-react": "1.18.0",
     "next": "16.2.9",
+    "next-auth": "^5.0.0-beta.25",
+    "pino": "^9.6.0",
+    "pino-pretty": "^14.0.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "@types/node": "25.9.3",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.9",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vitest": "^3.1.0"
   }
 }

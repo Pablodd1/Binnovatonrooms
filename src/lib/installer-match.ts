@@ -1,7 +1,8 @@
 import type { InspectionDiagnosis, InstallerMatch } from "./analysis-schema";
 import { getSupabaseAdmin } from "./supabase-admin";
+import { logger } from "./logger";
 
-function normalize(value: string) {
+export function normalize(value: string) {
   return value
     .toLowerCase()
     .normalize("NFD")
@@ -9,7 +10,7 @@ function normalize(value: string) {
     .trim();
 }
 
-function specialtyAliases(specialist: string) {
+export function specialtyAliases(specialist: string) {
   const text = normalize(specialist);
   const aliases = new Set([text]);
 
@@ -24,6 +25,20 @@ function specialtyAliases(specialist: string) {
   return [...aliases];
 }
 
+function fallbackAliases() {
+  return [
+    "electricista",
+    "plomero",
+    "impermeabilizador",
+    "estructurista",
+    "instalador de pisos",
+    "pintor",
+    "albanil",
+    "inspector general",
+    "herreria",
+  ];
+}
+
 export async function matchInstallers(params: {
   diagnosis: InspectionDiagnosis;
   lat?: number | null;
@@ -33,18 +48,36 @@ export async function matchInstallers(params: {
   if (!supabase) return [];
 
   const aliases = specialtyAliases(params.diagnosis.especialista_requerido);
+  const log = logger.child({ module: "installer-match", specialist: params.diagnosis.especialista_requerido });
 
   const { data, error } = await supabase.rpc("match_installers", {
     required_specialties: aliases,
     user_lat: params.lat ?? null,
     user_lng: params.lng ?? null,
-    max_results: 5
+    max_results: 5,
   });
 
   if (error) {
-    console.error("match_installers failed", error);
+    log.error({ error: error.message }, "match_installers failed");
     return [];
   }
 
-  return (data || []) as InstallerMatch[];
+  if (data && data.length > 0) {
+    return data as InstallerMatch[];
+  }
+
+  log.info("No exact matches found, trying broader fallback");
+  const { data: fallbackData, error: fallbackError } = await supabase.rpc("match_installers", {
+    required_specialties: fallbackAliases(),
+    user_lat: params.lat ?? null,
+    user_lng: params.lng ?? null,
+    max_results: 3,
+  });
+
+  if (fallbackError) {
+    log.error({ error: fallbackError.message }, "Fallback match_installers failed");
+    return [];
+  }
+
+  return (fallbackData || []) as InstallerMatch[];
 }
