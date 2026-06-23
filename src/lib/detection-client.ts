@@ -146,20 +146,30 @@ export function detectionSummary(detections: DetectionResult[]): {
 } {
   const defectTypes: Record<string, number> = {};
   let totalConfidence = 0;
-
-  for (const det of detections) {
-    defectTypes[det.defect_type] = (defectTypes[det.defect_type] || 0) + 1;
-    totalConfidence += det.confidence;
-  }
+  let highConfidenceCount = 0;
+  let totalArea = 0;
 
   const totalDefects = detections.length;
-  const avgConfidence = totalDefects > 0 ? totalConfidence / totalDefects : 0;
-  const highConfidenceCount = detections.filter((d) => d.confidence >= 0.7).length;
 
-  let totalArea = 0;
-  for (const det of detections) {
+  for (let i = 0; i < totalDefects; i++) {
+    const det = detections[i];
+
+    // Count defect types
+    defectTypes[det.defect_type] = (defectTypes[det.defect_type] || 0) + 1;
+
+    // Sum confidence
+    totalConfidence += det.confidence;
+
+    // Count high confidence
+    if (det.confidence >= 0.7) {
+      highConfidenceCount++;
+    }
+
+    // Sum area
     totalArea += det.width * det.height;
   }
+
+  const avgConfidence = totalDefects > 0 ? totalConfidence / totalDefects : 0;
   const spatialCoverage = Math.min(1, totalArea);
 
   return {
