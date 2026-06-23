@@ -1,0 +1,3 @@
+## 2024-06-22 - Optimize real-time image analysis
+**Learning:** `getImageData` returns an array where each pixel has 4 values (RGBA). When processing large image data in a React app (e.g. `scoreFrame` on every interval), using `Array.prototype.push()` into dynamic arrays for RGBA channels and then using `.reduce()` creates huge garbage collection pressure and can stutter the camera feed.
+**Action:** Use pre-allocated `Float32Array` for pixel data that requires multi-pass processing, and accumulate scalar values (sums, counts) inside the main image iteration loop instead of allocating whole arrays per channel. Replace array `.reduce()` with basic arithmetic on accumulated variables.

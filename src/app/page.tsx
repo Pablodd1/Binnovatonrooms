@@ -202,32 +202,45 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
   let brightness = 0;
   let brightPixels = 0;
   let darkPixels = 0;
-  const grayscale: number[] = [];
-  const redChannel: number[] = [];
-  const greenChannel: number[] = [];
-  const blueChannel: number[] = [];
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  const pixelCount = sampleWidth * sampleHeight;
+  const grayscale = new Float32Array(pixelCount);
+  let gIdx = 0;
 
   for (let i = 0; i < data.length; i += 4) {
-    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-    grayscale.push(gray);
-    redChannel.push(data[i]);
-    greenChannel.push(data[i + 1]);
-    blueChannel.push(data[i + 2]);
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const gray = r * 0.299 + g * 0.587 + b * 0.114;
+
+    grayscale[gIdx++] = gray;
+    sumR += r;
+    sumG += g;
+    sumB += b;
     brightness += gray;
+
     if (gray > 245) brightPixels += 1;
     if (gray < 15) darkPixels += 1;
   }
 
-  brightness = brightness / grayscale.length;
-  const variance =
-    grayscale.reduce((sum, gray) => sum + (gray - brightness) ** 2, 0) / Math.max(1, grayscale.length - 1);
-  const contrast = Math.sqrt(variance);
-  const glarePercent = (brightPixels / grayscale.length) * 100;
-  const underexposedPercent = (darkPixels / grayscale.length) * 100;
+  brightness = brightness / pixelCount;
 
-  const avgR = redChannel.reduce((s, v) => s + v, 0) / grayscale.length;
-  const avgG = greenChannel.reduce((s, v) => s + v, 0) / grayscale.length;
-  const avgB = blueChannel.reduce((s, v) => s + v, 0) / grayscale.length;
+  let sumSq = 0;
+  for (let i = 0; i < pixelCount; i++) {
+    const diff = grayscale[i] - brightness;
+    sumSq += diff * diff;
+  }
+  const variance = sumSq / Math.max(1, pixelCount - 1);
+  const contrast = Math.sqrt(variance);
+
+  const glarePercent = (brightPixels / pixelCount) * 100;
+  const underexposedPercent = (darkPixels / pixelCount) * 100;
+
+  const avgR = sumR / pixelCount;
+  const avgG = sumG / pixelCount;
+  const avgB = sumB / pixelCount;
   const colorSpread = Math.max(avgR, avgG, avgB) - Math.min(avgR, avgG, avgB);
   const hasColorCast = colorSpread > 30;
 
@@ -261,7 +274,7 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
     }
   }
 
-  const sharpness = edgeEnergy / grayscale.length;
+  const sharpness = edgeEnergy / pixelCount;
   const centerDetailRatio = centerEdgeEnergy / Math.max(1, edgeEnergy);
   const cornerDetailRatio = cornerEdgeEnergy / Math.max(1, edgeEnergy);
   const megapixels = (canvas.width * canvas.height) / 1_000_000;
