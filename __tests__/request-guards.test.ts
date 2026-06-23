@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeText, validateImageFile, imageExtension, isUploadedImage, boundedCoordinate, numberOrNull } from "@/lib/request-guards";
+import {
+  sanitizeText,
+  validateImageFile,
+  imageExtension,
+  isUploadedImage,
+  boundedCoordinate,
+  numberOrNull,
+} from "@/lib/request-guards";
 
 describe("sanitizeText", () => {
   it("trims whitespace", () => {
@@ -21,6 +28,39 @@ describe("sanitizeText", () => {
   it("truncates to max length", () => {
     expect(sanitizeText("a".repeat(1000), "", 10)).toBe("a".repeat(10));
   });
+  it("returns default fallback (empty string) for null if not provided", () => {
+    expect(sanitizeText(null)).toBe("");
+  });
+
+  it("returns fallback when passed a File object", () => {
+    const file = new File(["test"], "test.txt", { type: "text/plain" });
+    expect(sanitizeText(file, "file_fallback")).toBe("file_fallback");
+  });
+
+  it("collapses tabs, newlines, and carriage returns into single spaces", () => {
+    expect(sanitizeText("hello\t\n\rworld")).toBe("hello world");
+    expect(sanitizeText("hello \t \n \r world")).toBe("hello world");
+  });
+
+  it("returns empty string for string composed entirely of whitespace", () => {
+    expect(sanitizeText("   \t\n\r   ")).toBe("");
+  });
+
+  it("returns empty string for string composed entirely of null characters", () => {
+    expect(sanitizeText("\u0000\u0000\u0000")).toBe("");
+  });
+
+  it("handles mixed null characters and complex whitespace", () => {
+    expect(sanitizeText("  \u0000 hello \t\n \u0000 world \r \u0000 ")).toBe(
+      "hello world",
+    );
+  });
+
+  it("handles maxLength edge cases", () => {
+    expect(sanitizeText("hello", "", 0)).toBe("");
+    expect(sanitizeText("hello", "", 5)).toBe("hello");
+    expect(sanitizeText("hello world", "", 5)).toBe("hello");
+  });
 });
 
 describe("validateImageFile", () => {
@@ -40,15 +80,21 @@ describe("validateImageFile", () => {
   });
 
   it("rejects empty file", () => {
-    expect(validateImageFile(createFile(0, "image/jpeg"))).toBe("Image is empty.");
+    expect(validateImageFile(createFile(0, "image/jpeg"))).toBe(
+      "Image is empty.",
+    );
   });
 
   it("rejects oversized file", () => {
-    expect(validateImageFile(createFile(11 * 1024 * 1024, "image/jpeg"))).toContain("large");
+    expect(
+      validateImageFile(createFile(11 * 1024 * 1024, "image/jpeg")),
+    ).toContain("large");
   });
 
   it("rejects unsupported type", () => {
-    expect(validateImageFile(createFile(1024, "image/gif"))).toContain("Unsupported");
+    expect(validateImageFile(createFile(1024, "image/gif"))).toContain(
+      "Unsupported",
+    );
   });
 });
 
