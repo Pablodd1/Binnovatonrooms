@@ -1,0 +1,2 @@
+- When adding new tests that modify `process.env`, always save the original `process.env` in a top-level block and restore it in `beforeEach` and `afterEach` to avoid state leakage and test flakiness.
+- When running `npm test`, verify the existing `vitest.config.ts` handles path aliases like `@/lib/` before deciding to overwrite it. Do not overwrite configuration files without fully understanding them.
