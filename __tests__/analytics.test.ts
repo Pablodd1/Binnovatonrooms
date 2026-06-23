@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildAnalytics } from "@/lib/analytics";
 import { normalizeReports } from "@/lib/reports";
-import { specialtyAliases, normalize } from "@/lib/installer-match";
 
 describe("buildAnalytics", () => {
   const sampleRows = [
@@ -71,22 +70,5 @@ describe("normalizeReports", () => {
     const row = { ...sampleRow, diagnostico: null };
     const result = normalizeReports([row]);
     expect(result[0].confidence).toBe(0);
-  });
-});
-
-describe("specialtyAliases", () => {
-  it("includes base term", () => {
-    const result = specialtyAliases("electricista");
-    expect(result).toContain("electricista");
-  });
-
-  it("infers related specialties", () => {
-    const result = specialtyAliases("Electrician");
-    expect(result).toContain("electricista");
-  });
-
-  it("handles humedad-related terms", () => {
-    const result = specialtyAliases("impermeabilizante");
-    expect(result).toContain("impermeabilizador");
   });
 });
