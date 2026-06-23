@@ -75,6 +75,37 @@ describe("detectionSummary", () => {
     expect(summary.defectTypes["spalling"]).toBe(1);
     expect(summary.avgConfidence).toBeCloseTo(0.8, 1);
     expect(summary.highConfidenceCount).toBe(3);
+    expect(summary.spatialCoverage).toBe(0.043);
+  });
+
+  it("caps spatial coverage at 1.0", () => {
+    const detections: DetectionResult[] = [
+      { defect_type: "crack", confidence: 0.9, x_center: 0.5, y_center: 0.5, width: 1.0, height: 1.0, class_id: 0 },
+      { defect_type: "spalling", confidence: 0.8, x_center: 0.5, y_center: 0.5, width: 0.5, height: 0.5, class_id: 1 },
+    ];
+    const summary = detectionSummary(detections);
+    expect(summary.spatialCoverage).toBe(1.0);
+  });
+
+  it("correctly identifies high vs low confidence detections", () => {
+    const detections: DetectionResult[] = [
+      { defect_type: "crack", confidence: 0.9, x_center: 0.5, y_center: 0.5, width: 0.1, height: 0.1, class_id: 0 },
+      { defect_type: "crack", confidence: 0.69, x_center: 0.5, y_center: 0.5, width: 0.1, height: 0.1, class_id: 0 },
+      { defect_type: "spalling", confidence: 0.7, x_center: 0.5, y_center: 0.5, width: 0.1, height: 0.1, class_id: 1 },
+      { defect_type: "spalling", confidence: 0.2, x_center: 0.5, y_center: 0.5, width: 0.1, height: 0.1, class_id: 1 },
+    ];
+    const summary = detectionSummary(detections);
+    expect(summary.highConfidenceCount).toBe(2);
+  });
+
+  it("rounds average confidence to 3 decimal places", () => {
+    const detections: DetectionResult[] = [
+      { defect_type: "crack", confidence: 0.33, x_center: 0.5, y_center: 0.5, width: 0.1, height: 0.1, class_id: 0 },
+      { defect_type: "crack", confidence: 0.33, x_center: 0.5, y_center: 0.5, width: 0.1, height: 0.1, class_id: 0 },
+      { defect_type: "crack", confidence: 0.34, x_center: 0.5, y_center: 0.5, width: 0.1, height: 0.1, class_id: 0 },
+    ];
+    const summary = detectionSummary(detections);
+    expect(summary.avgConfidence).toBe(0.333);
   });
 
   it("returns zeros for empty detections", () => {
