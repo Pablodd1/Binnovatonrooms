@@ -264,10 +264,10 @@ set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
-drop policy if exists "Public can read inspection images" on storage.objects;
-create policy "Public can read inspection images"
+drop policy if exists "Authenticated users can read inspection images" on storage.objects;
+create policy "Authenticated users can read inspection images"
 on storage.objects for select
-using (bucket_id = 'inspection-images');
+using (bucket_id = 'inspection-images' and auth.role() = 'authenticated');
 
 drop policy if exists "Service role manages inspection images" on storage.objects;
 create policy "Service role manages inspection images"
