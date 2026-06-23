@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeText, validateImageFile, imageExtension, isUploadedImage, boundedCoordinate, numberOrNull } from "@/lib/request-guards";
+import {
+  sanitizeText,
+  validateImageFile,
+  imageExtension,
+  isUploadedImage,
+  boundedCoordinate,
+  numberOrNull,
+} from "@/lib/request-guards";
 
 describe("sanitizeText", () => {
   it("trims whitespace", () => {
@@ -21,6 +28,31 @@ describe("sanitizeText", () => {
   it("truncates to max length", () => {
     expect(sanitizeText("a".repeat(1000), "", 10)).toBe("a".repeat(10));
   });
+
+  it("uses default fallback (empty string) for non-string inputs", () => {
+    expect(sanitizeText(null)).toBe("");
+  });
+
+  it("uses default maxLength (500) and truncates", () => {
+    expect(sanitizeText("a".repeat(600))).toBe("a".repeat(500));
+  });
+
+  it("returns empty string for only whitespace", () => {
+    expect(sanitizeText("   \n \t   ")).toBe("");
+  });
+
+  it("handles empty string correctly", () => {
+    expect(sanitizeText("")).toBe("");
+  });
+
+  it("handles mixed nulls and whitespaces", () => {
+    expect(sanitizeText("  \u0000 a \n \u0000 \t b \u0000  ")).toBe("a b");
+  });
+
+  it("handles File objects correctly by returning fallback", () => {
+    const file = new File([""], "test.txt", { type: "text/plain" });
+    expect(sanitizeText(file, "file-fallback")).toBe("file-fallback");
+  });
 });
 
 describe("validateImageFile", () => {
@@ -40,15 +72,21 @@ describe("validateImageFile", () => {
   });
 
   it("rejects empty file", () => {
-    expect(validateImageFile(createFile(0, "image/jpeg"))).toBe("Image is empty.");
+    expect(validateImageFile(createFile(0, "image/jpeg"))).toBe(
+      "Image is empty.",
+    );
   });
 
   it("rejects oversized file", () => {
-    expect(validateImageFile(createFile(11 * 1024 * 1024, "image/jpeg"))).toContain("large");
+    expect(
+      validateImageFile(createFile(11 * 1024 * 1024, "image/jpeg")),
+    ).toContain("large");
   });
 
   it("rejects unsupported type", () => {
-    expect(validateImageFile(createFile(1024, "image/gif"))).toContain("Unsupported");
+    expect(validateImageFile(createFile(1024, "image/gif"))).toContain(
+      "Unsupported",
+    );
   });
 });
 
