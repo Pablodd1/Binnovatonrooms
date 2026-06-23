@@ -1,0 +1,3 @@
+## 2025-02-28 - [TypedArrays for Image Processing]
+**Learning:** The `scoreFrame` function in `src/app/page.tsx` was using normal JavaScript arrays (`[]`) and `push()` inside a loop to collect pixel values for image processing. This caused significant memory allocation overhead and garbage collection pauses since this function is run frequently (e.g., inside a `setInterval`).
+**Action:** Replace standard arrays with `TypedArrays` (`Float32Array`, `Uint8Array`) and pre-allocate the required size using bounding calculations (e.g., `sampleWidth * sampleHeight`). Eliminate `.push()` and `.reduce()` inside hot loops, substituting them with manual accumulation over a single loop pass. This is a highly performant optimization for JavaScript image processing loops.
