@@ -55,11 +55,12 @@ export function buildUserPrompt(input: {
   detailLevel?: "standard" | "detailed" | "forensic";
   imageAnalysisHints?: string[];
 }) {
-  const detailInstructions = input.detailLevel === "forensic"
-    ? `ANALISIS FORENSE: Detecta TODOS los defectos visibles, incluyendo micro-fisuras (<0.5mm), variaciones sutiles de color (2-3% differencia), sombras anormales, cambios de textura, eflorescencia, manchas incipientes, burbujas de pintura, rayones finos, y cualquier anomalia que sugiera un problema incipiente o subyacente. Para cada hallazgo, indica si es confirmado o sospechoso.`
-    : input.detailLevel === "detailed"
-    ? `ANALISIS DETALLADO: Ademas de defectos evidentes, busca patrones de desgaste, relaciones entre elementos (ej: grieta cerca de tuberia, mancha debajo de ventana), tendencias de deterioro, y defectos marginales que puedan escalar.`
-    : `ANALISIS ESTANDAR: Enfocate en defectos claramente visibles que requieran atencion. Menciona defectos menores si son relevantes para el contexto.`;
+  const detailInstructions =
+    input.detailLevel === "forensic"
+      ? `ANALISIS FORENSE: Detecta TODOS los defectos visibles, incluyendo micro-fisuras (<0.5mm), variaciones sutiles de color (2-3% differencia), sombras anormales, cambios de textura, eflorescencia, manchas incipientes, burbujas de pintura, rayones finos, y cualquier anomalia que sugiera un problema incipiente o subyacente. Para cada hallazgo, indica si es confirmado o sospechoso.`
+      : input.detailLevel === "detailed"
+        ? `ANALISIS DETALLADO: Ademas de defectos evidentes, busca patrones de desgaste, relaciones entre elementos (ej: grieta cerca de tuberia, mancha debajo de ventana), tendencias de deterioro, y defectos marginales que puedan escalar.`
+        : `ANALISIS ESTANDAR: Enfocate en defectos claramente visibles que requieran atencion. Menciona defectos menores si son relevantes para el contexto.`;
 
   const imageHints = input.imageAnalysisHints?.length
     ? `\nSugerencias de analisis previo para esta imagen:\n${input.imageAnalysisHints.map((h) => `- ${h}`).join("\n")}`
@@ -76,6 +77,9 @@ Contexto de captura:
 - Imagenes del set: ${input.imageCount || 1}
 - Nivel de detalle solicitado: ${input.detailLevel || "standard"}
 ${imageHints}
+
+INSTRUCCIONES DE DETALLE:
+${detailInstructions}
 
 Prioriza defectos de construccion visibles. Si hay varias fallas, diagnostica la mas urgente y menciona evidencia visual relevante. Si detectas multiples problemas, menciona TODOS los que veas con su nivel de severidad respectivo.
 
