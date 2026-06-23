@@ -1,0 +1,1 @@
+- Offloaded blocking model inference to a thread pool in FastAPI async endpoints to prevent event loop blocking and improve concurrency.
