@@ -1,0 +1,3 @@
+🎯 **What:** Fixed an overly permissive CORS policy in `detection-service/main.py` where `allow_origins=["*"]` was used alongside `allow_credentials=True`.
+⚠️ **Risk:** Allowing any origin with credentials can expose sensitive session data and lead to cross-site request forgery and data extraction.
+🛡️ **Solution:** Replaced `"*"` with a dynamically parsed list from the `ALLOWED_ORIGINS` environment variable, defaulting to `http://localhost:3000`.

@@ -1,0 +1,1 @@
+- CORS configurations must not allow arbitrary origins with credentials as this enables Cross-Origin Resource Sharing exploits (CORS vulnerabilities). Fetch origins dynamically and default safely.
