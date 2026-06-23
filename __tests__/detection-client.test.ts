@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
+  detectDefects,
   detectionToEvidenceMarkers,
   detectionSummary,
   depthToMeasurementContext,
@@ -65,9 +66,33 @@ describe("detectionToEvidenceMarkers", () => {
 describe("detectionSummary", () => {
   it("calculates correct summary", () => {
     const detections: DetectionResult[] = [
-      { defect_type: "crack", confidence: 0.9, x_center: 0.5, y_center: 0.5, width: 0.1, height: 0.1, class_id: 0 },
-      { defect_type: "crack", confidence: 0.8, x_center: 0.3, y_center: 0.3, width: 0.05, height: 0.05, class_id: 0 },
-      { defect_type: "spalling", confidence: 0.7, x_center: 0.7, y_center: 0.7, width: 0.2, height: 0.15, class_id: 1 },
+      {
+        defect_type: "crack",
+        confidence: 0.9,
+        x_center: 0.5,
+        y_center: 0.5,
+        width: 0.1,
+        height: 0.1,
+        class_id: 0,
+      },
+      {
+        defect_type: "crack",
+        confidence: 0.8,
+        x_center: 0.3,
+        y_center: 0.3,
+        width: 0.05,
+        height: 0.05,
+        class_id: 0,
+      },
+      {
+        defect_type: "spalling",
+        confidence: 0.7,
+        x_center: 0.7,
+        y_center: 0.7,
+        width: 0.2,
+        height: 0.15,
+        class_id: 1,
+      },
     ];
     const summary = detectionSummary(detections);
     expect(summary.totalDefects).toBe(3);
@@ -110,5 +135,85 @@ describe("depthToMeasurementContext", () => {
   it("returns message for null depth", () => {
     const context = depthToMeasurementContext(null);
     expect(context).toContain("No depth data");
+  });
+});
+
+// Mock logger to prevent console noise during tests
+vi.mock("@/lib/logger", () => ({
+  logger: {
+    warn: vi.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+describe("detectDefects", () => {
+  const mockImageBuffer = Buffer.from("fake-image-data");
+  const mockMimeType = "image/jpeg";
+
+  let originalFetch: typeof global.fetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+    global.fetch = vi.fn();
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.clearAllMocks();
+  });
+
+  it("returns parsed response on success", async () => {
+    const mockResponse = {
+      detections: [
+        {
+          defect_type: "crack",
+          confidence: 0.9,
+          x_center: 0.5,
+          y_center: 0.5,
+          width: 0.1,
+          height: 0.1,
+          class_id: 0,
+        },
+      ],
+      depth: null,
+      processing_time_ms: 100,
+      device: "cpu",
+      model_versions: {},
+    };
+
+    (global.fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    });
+
+    const result = await detectDefects(mockImageBuffer, mockMimeType);
+    expect(result).toEqual(mockResponse);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    // Verify the FormData gets created correctly
+    const fetchArgs = (global.fetch as any).mock.calls[0];
+    expect(fetchArgs[0]).toContain("/detect");
+    expect(fetchArgs[1].method).toBe("POST");
+    expect(fetchArgs[1].body).toBeInstanceOf(FormData);
+  });
+
+  it("returns null and logs warning on non-ok response", async () => {
+    (global.fetch as any).mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+    });
+
+    const result = await detectDefects(mockImageBuffer, mockMimeType);
+    expect(result).toBeNull();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns null and logs warning on fetch error", async () => {
+    (global.fetch as any).mockRejectedValueOnce(new Error("Network Error"));
+
+    const result = await detectDefects(mockImageBuffer, mockMimeType);
+    expect(result).toBeNull();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });
