@@ -1,0 +1,3 @@
+## 2024-06-23 - Optimize Memory Allocation in Camera Frame Processing
+**Learning:** High-frequency functions like `scoreFrame` that run on every frame of a video stream can cause severe Garbage Collection (GC) overhead and frame drops if they allocate large arrays (e.g., `number[]`) and use expensive array methods (`reduce`, `filter`) repeatedly.
+**Action:** Replace dynamically sized JavaScript arrays with typed arrays (e.g., `Float32Array`) of known lengths, calculate sums inline instead of allocating arrays for individual color channels, and replace expensive iteration methods with basic `for` loops for high-frequency processing tasks to avoid UI jank and memory spikes.
