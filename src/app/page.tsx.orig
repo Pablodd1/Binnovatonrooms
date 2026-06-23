@@ -208,6 +208,7 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
   const greenChannel = new Uint8Array(numPixels);
   const blueChannel = new Uint8Array(numPixels);
 
+  let sumGray = 0;
   let sumR = 0;
   let sumG = 0;
   let sumB = 0;
@@ -219,6 +220,7 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
     greenChannel[p] = data[i + 1];
     blueChannel[p] = data[i + 2];
 
+    sumGray += gray;
     sumR += data[i];
     sumG += data[i + 1];
     sumB += data[i + 2];
