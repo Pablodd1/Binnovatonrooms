@@ -998,6 +998,7 @@ export default function Home() {
                     className={clsx("capture-thumb", selectedCapture?.id === capture.id && "active")}
                     key={capture.id}
                     type="button"
+                    aria-label={`Seleccionar foto ${index + 1} para ver calidad`}
                     onClick={() => {
                       setSelectedCaptureId(capture.id);
                       setQuality(capture.quality);
