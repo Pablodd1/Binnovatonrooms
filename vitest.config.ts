@@ -9,7 +9,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/lib/**", "src/app/api/**"],
-      exclude: ["src/lib/logger.ts", "src/lib/auth.ts"],
+      exclude: ["src/lib/auth.ts"],
       thresholds: {
         statements: 60,
         branches: 50,
