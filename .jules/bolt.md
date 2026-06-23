@@ -1,0 +1,2 @@
+## Performance Learnings
+- **[2024-xx-xx]**: Testing `src/lib/vision-prompt.ts` build functions revealed that the pure functional implementation for string manipulation allows for very simple synchronous tests that execute incredibly fast. By extracting string building logic from asynchronous network boundaries, we enable high coverage with negligible test suite execution overhead (~6ms for 6 tests).
