@@ -1,6 +1,6 @@
 import io
-import os
 import time
+import asyncio
 import logging
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -258,12 +258,15 @@ async def detect(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid image format")
 
-    detections = run_sahi_inference(image, confidence) if use_sahi else run_yolo_inference(image, confidence)
+    if use_sahi:
+        detections = await asyncio.to_thread(run_sahi_inference, image, confidence)
+    else:
+        detections = await asyncio.to_thread(run_yolo_inference, image, confidence)
 
     depth = None
     if include_depth:
         try:
-            depth = run_depth_estimation(image)
+            depth = await asyncio.to_thread(run_depth_estimation, image)
         except Exception as e:
             logger.warning(f"Depth estimation failed: {e}")
 
@@ -303,12 +306,15 @@ async def detect_batch(
         except Exception:
             continue
 
-        detections = run_sahi_inference(image, confidence) if use_sahi else run_yolo_inference(image, confidence)
+        if use_sahi:
+            detections = await asyncio.to_thread(run_sahi_inference, image, confidence)
+        else:
+            detections = await asyncio.to_thread(run_yolo_inference, image, confidence)
         all_detections.extend(detections)
 
         if include_depth:
             try:
-                depth = run_depth_estimation(image)
+                depth = await asyncio.to_thread(run_depth_estimation, image)
                 depths.append(depth)
             except Exception:
                 pass
