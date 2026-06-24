@@ -1,4 +1,5 @@
 import pino from "pino";
+import { getClientIp } from "./request-guards";
 
 const isDevelopment = process.env.NODE_ENV === "development";
 
@@ -26,19 +27,16 @@ export const logger = pino({
 });
 
 export function createRequestLogger(requestId: string, request?: Request) {
-  const ip = request
-    ? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      request.headers.get("x-real-ip") ||
-      "unknown"
-    : "unknown";
+  const logData: Record<string, any> = { requestId };
 
-  const userAgent = request?.headers.get("user-agent") || "unknown";
+  if (request) {
+    const url = new URL(request.url);
+    logData.path = url.pathname;
+    logData.method = request.method;
+    logData.ip = getClientIp(request);
+  }
 
-  return logger.child({
-    requestId,
-    ip,
-    userAgent,
-  });
+  return logger.child(logData);
 }
 
 export function generateRequestId(): string {
