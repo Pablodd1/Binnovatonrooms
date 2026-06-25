@@ -649,33 +649,35 @@ export default function Home() {
       stopStream();
       setCameraLabel("Imagen subida manualmente");
       const selectedFiles = Array.from(files).slice(0, MAX_INSPECTION_IMAGES);
-      for (const file of selectedFiles) {
-        try {
-          const score = await scoreUploadedImage(file);
-          addCapture({
-            id: crypto.randomUUID(),
-            file,
-            url: URL.createObjectURL(file),
-            quality: score,
-            source: "Imagen subida",
-            createdAt: new Date().toISOString()
-          });
-        } catch {
-          addCapture({
-            id: crypto.randomUUID(),
-            file,
-            url: URL.createObjectURL(file),
-            quality: {
-              ...defaultQuality,
-              grade: "A",
-              notes: "Imagen subida; no se pudo calcular calidad local.",
-              guidance: ["Revise que la imagen este enfocada, iluminada y tenga escala si necesita medir."]
-            },
-            source: "Imagen subida",
-            createdAt: new Date().toISOString()
-          });
-        }
-      }
+      await Promise.all(
+        selectedFiles.map(async (file) => {
+          try {
+            const score = await scoreUploadedImage(file);
+            addCapture({
+              id: crypto.randomUUID(),
+              file,
+              url: URL.createObjectURL(file),
+              quality: score,
+              source: "Imagen subida",
+              createdAt: new Date().toISOString()
+            });
+          } catch {
+            addCapture({
+              id: crypto.randomUUID(),
+              file,
+              url: URL.createObjectURL(file),
+              quality: {
+                ...defaultQuality,
+                grade: "A",
+                notes: "Imagen subida; no se pudo calcular calidad local.",
+                guidance: ["Revise que la imagen este enfocada, iluminada y tenga escala si necesita medir."]
+              },
+              source: "Imagen subida",
+              createdAt: new Date().toISOString()
+            });
+          }
+        })
+      );
     },
     [addCapture, stopStream]
   );
