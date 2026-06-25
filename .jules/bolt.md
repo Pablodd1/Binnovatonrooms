@@ -1,0 +1,1 @@
+- Overly permissive RLS policies for storage buckets often require restricting access to the `authenticated` role (`auth.role() = 'authenticated'`) to resolve security vulnerabilities while maintaining access for logged-in users. Do not use the `anon` role to restrict access. Ensure to update the policy name to reflect the updated scope.
