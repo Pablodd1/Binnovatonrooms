@@ -9,10 +9,10 @@ export async function GET(request: Request) {
   const log = createRequestLogger(requestId, request);
 
   const health = getRuntimeHealth();
-  log.info({ ok: health.geminiConfigured }, "Health check");
+  log.info({ ok: health.geminiKeyConfigured }, "Health check");
 
   return NextResponse.json({
-    ok: health.geminiConfigured,
+    ok: health.geminiKeyConfigured,
     ...health,
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
