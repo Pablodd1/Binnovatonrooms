@@ -71,7 +71,7 @@ export function buildAnalytics(rows: ReportRow[], generatedFrom: "supabase" | "d
   let urgencyCount = 0;
   let severeReports = 0;
   let humanReview = 0;
-  const signals: string[] = [];
+  const signals = new Set<string>();
 
   rows.forEach((row) => {
     increment(severityMap, row.severidad);
@@ -95,7 +95,12 @@ export function buildAnalytics(rows: ReportRow[], generatedFrom: "supabase" | "d
     if (row.severidad === "critica") current.critical += 1;
     weeklyMap.set(week, current);
 
-    row.diagnostico?.riesgos?.slice(0, 1).forEach((risk) => signals.push(risk));
+    if (signals.size < 6) {
+      const firstRisk = row.diagnostico?.riesgos?.[0];
+      if (firstRisk) {
+        signals.add(firstRisk);
+      }
+    }
   });
 
   return {
@@ -108,7 +113,7 @@ export function buildAnalytics(rows: ReportRow[], generatedFrom: "supabase" | "d
     byDefect: toBuckets(defectMap),
     bySpecialist: toBuckets(specialistMap),
     weeklyTrend: [...weeklyMap.values()].sort((a, b) => a.week.localeCompare(b.week)).slice(-8),
-    recentSignals: [...new Set(signals)].slice(0, 6),
+    recentSignals: Array.from(signals),
     generatedFrom
   };
 }
