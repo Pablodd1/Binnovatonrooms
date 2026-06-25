@@ -202,42 +202,53 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
   let brightness = 0;
   let brightPixels = 0;
   let darkPixels = 0;
-  const grayscale: number[] = [];
-  const redChannel: number[] = [];
-  const greenChannel: number[] = [];
-  const blueChannel: number[] = [];
+  const pixelCount = sampleWidth * sampleHeight;
+  const grayscale = new Float32Array(pixelCount);
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
 
-  for (let i = 0; i < data.length; i += 4) {
-    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-    grayscale.push(gray);
-    redChannel.push(data[i]);
-    greenChannel.push(data[i + 1]);
-    blueChannel.push(data[i + 2]);
+  for (let i = 0, px = 0; i < data.length; i += 4, px++) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const gray = r * 0.299 + g * 0.587 + b * 0.114;
+
+    grayscale[px] = gray;
+    sumR += r;
+    sumG += g;
+    sumB += b;
     brightness += gray;
+
     if (gray > 245) brightPixels += 1;
     if (gray < 15) darkPixels += 1;
   }
 
-  brightness = brightness / grayscale.length;
-  const variance =
-    grayscale.reduce((sum, gray) => sum + (gray - brightness) ** 2, 0) / Math.max(1, grayscale.length - 1);
-  const contrast = Math.sqrt(variance);
-  const glarePercent = (brightPixels / grayscale.length) * 100;
-  const underexposedPercent = (darkPixels / grayscale.length) * 100;
+  brightness = brightness / pixelCount;
 
-  const avgR = redChannel.reduce((s, v) => s + v, 0) / grayscale.length;
-  const avgG = greenChannel.reduce((s, v) => s + v, 0) / grayscale.length;
-  const avgB = blueChannel.reduce((s, v) => s + v, 0) / grayscale.length;
+  let varianceSum = 0;
+  for (let i = 0; i < pixelCount; i++) {
+    varianceSum += (grayscale[i] - brightness) ** 2;
+  }
+  const variance = varianceSum / Math.max(1, pixelCount - 1);
+
+  const contrast = Math.sqrt(variance);
+  const glarePercent = (brightPixels / pixelCount) * 100;
+  const underexposedPercent = (darkPixels / pixelCount) * 100;
+
+  const avgR = sumR / pixelCount;
+  const avgG = sumG / pixelCount;
+  const avgB = sumB / pixelCount;
   const colorSpread = Math.max(avgR, avgG, avgB) - Math.min(avgR, avgG, avgB);
   const hasColorCast = colorSpread > 30;
 
   let edgeEnergy = 0;
   let centerEdgeEnergy = 0;
   let cornerEdgeEnergy = 0;
-  const gradientMagnitudes: number[] = [];
+  const gradientMagnitudes = new Float32Array((sampleWidth - 2) * (sampleHeight - 2));
 
-  for (let y = 1; y < sampleHeight - 1; y += 1) {
-    for (let x = 1; x < sampleWidth - 1; x += 1) {
+  for (let y = 1, gIdx = 0; y < sampleHeight - 1; y += 1) {
+    for (let x = 1; x < sampleWidth - 1; x += 1, gIdx++) {
       const idx = y * sampleWidth + x;
       const laplacian =
         grayscale[idx - sampleWidth] +
@@ -249,7 +260,7 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
       const gx = grayscale[idx + 1] - grayscale[idx - 1];
       const gy = grayscale[idx + sampleWidth] - grayscale[idx - sampleWidth];
       const magnitude = Math.sqrt(gx * gx + gy * gy);
-      gradientMagnitudes.push(magnitude);
+      gradientMagnitudes[gIdx] = magnitude;
 
       edgeEnergy += Math.abs(laplacian);
       if (x > sampleWidth * 0.2 && x < sampleWidth * 0.8 && y > sampleHeight * 0.15 && y < sampleHeight * 0.85) {
@@ -261,18 +272,28 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
     }
   }
 
-  const sharpness = edgeEnergy / grayscale.length;
+  const sharpness = edgeEnergy / pixelCount;
   const centerDetailRatio = centerEdgeEnergy / Math.max(1, edgeEnergy);
   const cornerDetailRatio = cornerEdgeEnergy / Math.max(1, edgeEnergy);
   const megapixels = (canvas.width * canvas.height) / 1_000_000;
 
-  gradientMagnitudes.sort((a, b) => a - b);
+  gradientMagnitudes.sort();
   const medianGradient = gradientMagnitudes[Math.floor(gradientMagnitudes.length / 2)] || 0;
-  const highGradientPixels = gradientMagnitudes.filter((g) => g > medianGradient * 3).length;
+
+  let highGradientPixels = 0;
+  let lowGradientPixels = 0;
+  const highThreshold = medianGradient * 3;
+  const lowThreshold = medianGradient * 0.1;
+
+  for (let i = 0; i < gradientMagnitudes.length; i++) {
+    const g = gradientMagnitudes[i];
+    if (g > highThreshold) highGradientPixels++;
+    if (g < lowThreshold) lowGradientPixels++;
+  }
+
   const textureVariance = highGradientPixels / Math.max(1, gradientMagnitudes.length);
   const hasFineTexture = textureVariance > 0.05;
 
-  const lowGradientPixels = gradientMagnitudes.filter((g) => g < medianGradient * 0.1).length;
   const smoothPercent = (lowGradientPixels / Math.max(1, gradientMagnitudes.length)) * 100;
   const hasSmoothSurface = smoothPercent > 60;
 
@@ -301,11 +322,14 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
 
   const dynamicRange = contrast * 2;
   const histogramBins = new Array(25).fill(0);
-  for (const g of grayscale) {
-    const bin = Math.min(24, Math.floor(g / 10));
+  for (let i = 0; i < grayscale.length; i++) {
+    const bin = Math.min(24, Math.floor(grayscale[i] / 10));
     histogramBins[bin]++;
   }
-  const occupiedBins = histogramBins.filter((c) => c > 0).length;
+  let occupiedBins = 0;
+  for (let i = 0; i < histogramBins.length; i++) {
+    if (histogramBins[i] > 0) occupiedBins++;
+  }
   const histogramSpread = occupiedBins / 25;
 
   const tooDark = brightness < 50;

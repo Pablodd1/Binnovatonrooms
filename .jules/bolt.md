@@ -1,0 +1,3 @@
+## 2024-05-19 - Optimize scoreFrame with TypedArrays and Single-Pass Loops
+**Learning:** Client-side image processing algorithms in this codebase (like `scoreFrame` in `src/app/page.tsx`) allocating and growing multiple standard arrays (e.g., `grayscale.push(...)`) inside a tight loop creates massive Garbage Collection pressure.
+**Action:** Pre-allocate `Float32Array` objects based on predictable sizes (e.g. `pixelCount = sampleWidth * sampleHeight`) to eliminate dynamic memory allocations, and rewrite `.filter().length` chains to simple loop accumulators. Additionally, remember that `Float32Array.prototype.sort()` sorts numerically by default, so custom comparators can be removed.
