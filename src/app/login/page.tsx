@@ -59,8 +59,8 @@ export default function LoginPage() {
               required
             />
           </label>
-          {error ? <p className="error">{error}</p> : null}
-          <button type="submit" disabled={loading} className="primary">
+          {error ? <p className="error" role="alert" aria-live="polite">{error}</p> : null}
+          <button type="submit" disabled={loading} className="primary" aria-busy={loading}>
             {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
