@@ -975,11 +975,11 @@ export default function Home() {
               {isAnalyzing ? <Loader2 className="spin" size={18} /> : <CheckCircle2 size={18} />}
               {actionText}
             </button>
-            <button type="button" onClick={() => exportDiagnosis(analysis, quality, captures)} disabled={!analysis}>
+            <button type="button" onClick={() => exportDiagnosis(analysis, quality, captures)} disabled={!analysis} title={!analysis ? "Se requiere un analisis para exportar" : undefined}>
               <Download size={18} />
               Exportar
             </button>
-            <button type="button" onClick={clearCaptures} disabled={captures.length === 0}>
+            <button type="button" onClick={clearCaptures} disabled={captures.length === 0} title={captures.length === 0 ? "El set ya esta vacio" : "Limpiar todas las fotos"}>
               Limpiar set
             </button>
           </div>
@@ -998,6 +998,8 @@ export default function Home() {
                     className={clsx("capture-thumb", selectedCapture?.id === capture.id && "active")}
                     key={capture.id}
                     type="button"
+                    aria-label={`Seleccionar foto ${index + 1}`}
+                    aria-pressed={selectedCapture?.id === capture.id}
                     onClick={() => {
                       setSelectedCaptureId(capture.id);
                       setQuality(capture.quality);
