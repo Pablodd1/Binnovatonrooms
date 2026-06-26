@@ -202,39 +202,56 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
   let brightness = 0;
   let brightPixels = 0;
   let darkPixels = 0;
-  const grayscale: number[] = [];
-  const redChannel: number[] = [];
-  const greenChannel: number[] = [];
-  const blueChannel: number[] = [];
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  const pixelCount = data.length / 4;
+  // ⚡ Bolt: Pre-allocate typed array for better GC performance instead of dynamic push
+  const grayscale = new Float32Array(pixelCount);
 
-  for (let i = 0; i < data.length; i += 4) {
-    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-    grayscale.push(gray);
-    redChannel.push(data[i]);
-    greenChannel.push(data[i + 1]);
-    blueChannel.push(data[i + 2]);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const gray = r * 0.299 + g * 0.587 + b * 0.114;
+
+    grayscale[p] = gray;
+    sumR += r;
+    sumG += g;
+    sumB += b;
     brightness += gray;
+
     if (gray > 245) brightPixels += 1;
-    if (gray < 15) darkPixels += 1;
+    else if (gray < 15) darkPixels += 1;
   }
 
-  brightness = brightness / grayscale.length;
-  const variance =
-    grayscale.reduce((sum, gray) => sum + (gray - brightness) ** 2, 0) / Math.max(1, grayscale.length - 1);
-  const contrast = Math.sqrt(variance);
-  const glarePercent = (brightPixels / grayscale.length) * 100;
-  const underexposedPercent = (darkPixels / grayscale.length) * 100;
+  brightness = brightness / pixelCount;
 
-  const avgR = redChannel.reduce((s, v) => s + v, 0) / grayscale.length;
-  const avgG = greenChannel.reduce((s, v) => s + v, 0) / grayscale.length;
-  const avgB = blueChannel.reduce((s, v) => s + v, 0) / grayscale.length;
+  // ⚡ Bolt: Use basic loop instead of array.reduce for variance calculation
+  let varianceSum = 0;
+  for (let i = 0; i < pixelCount; i++) {
+    const diff = grayscale[i] - brightness;
+    varianceSum += diff * diff;
+  }
+  const variance = varianceSum / Math.max(1, pixelCount - 1);
+  const contrast = Math.sqrt(variance);
+  const glarePercent = (brightPixels / pixelCount) * 100;
+  const underexposedPercent = (darkPixels / pixelCount) * 100;
+
+  // ⚡ Bolt: Compute averages directly from sums, avoiding array allocations
+  const avgR = sumR / pixelCount;
+  const avgG = sumG / pixelCount;
+  const avgB = sumB / pixelCount;
   const colorSpread = Math.max(avgR, avgG, avgB) - Math.min(avgR, avgG, avgB);
   const hasColorCast = colorSpread > 30;
 
   let edgeEnergy = 0;
   let centerEdgeEnergy = 0;
   let cornerEdgeEnergy = 0;
-  const gradientMagnitudes: number[] = [];
+
+  // ⚡ Bolt: Pre-allocate Float32Array for gradient magnitudes
+  const gradientMagnitudes = new Float32Array((sampleHeight - 2) * (sampleWidth - 2));
+  let gIdx = 0;
 
   for (let y = 1; y < sampleHeight - 1; y += 1) {
     for (let x = 1; x < sampleWidth - 1; x += 1) {
@@ -249,30 +266,39 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
       const gx = grayscale[idx + 1] - grayscale[idx - 1];
       const gy = grayscale[idx + sampleWidth] - grayscale[idx - sampleWidth];
       const magnitude = Math.sqrt(gx * gx + gy * gy);
-      gradientMagnitudes.push(magnitude);
+      gradientMagnitudes[gIdx++] = magnitude;
 
-      edgeEnergy += Math.abs(laplacian);
+      const absLaplacian = Math.abs(laplacian);
+      edgeEnergy += absLaplacian;
       if (x > sampleWidth * 0.2 && x < sampleWidth * 0.8 && y > sampleHeight * 0.15 && y < sampleHeight * 0.85) {
-        centerEdgeEnergy += Math.abs(laplacian);
+        centerEdgeEnergy += absLaplacian;
       }
       if ((x < sampleWidth * 0.15 || x > sampleWidth * 0.85) && (y < sampleHeight * 0.15 || y > sampleHeight * 0.85)) {
-        cornerEdgeEnergy += Math.abs(laplacian);
+        cornerEdgeEnergy += absLaplacian;
       }
     }
   }
 
-  const sharpness = edgeEnergy / grayscale.length;
+  const sharpness = edgeEnergy / pixelCount;
   const centerDetailRatio = centerEdgeEnergy / Math.max(1, edgeEnergy);
   const cornerDetailRatio = cornerEdgeEnergy / Math.max(1, edgeEnergy);
   const megapixels = (canvas.width * canvas.height) / 1_000_000;
 
-  gradientMagnitudes.sort((a, b) => a - b);
+  // ⚡ Bolt: TypedArrays sort numerically by default, no comparator needed
+  gradientMagnitudes.sort();
   const medianGradient = gradientMagnitudes[Math.floor(gradientMagnitudes.length / 2)] || 0;
-  const highGradientPixels = gradientMagnitudes.filter((g) => g > medianGradient * 3).length;
+
+  // ⚡ Bolt: Replace filter with loop for better performance
+  let highGradientPixels = 0;
+  let lowGradientPixels = 0;
+  for (let i = 0; i < gradientMagnitudes.length; i++) {
+    if (gradientMagnitudes[i] > medianGradient * 3) highGradientPixels++;
+    if (gradientMagnitudes[i] < medianGradient * 0.1) lowGradientPixels++;
+  }
+
   const textureVariance = highGradientPixels / Math.max(1, gradientMagnitudes.length);
   const hasFineTexture = textureVariance > 0.05;
 
-  const lowGradientPixels = gradientMagnitudes.filter((g) => g < medianGradient * 0.1).length;
   const smoothPercent = (lowGradientPixels / Math.max(1, gradientMagnitudes.length)) * 100;
   const hasSmoothSurface = smoothPercent > 60;
 

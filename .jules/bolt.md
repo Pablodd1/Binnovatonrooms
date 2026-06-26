@@ -1,0 +1,3 @@
+## 2025-06-26 - Image processing optimization
+**Learning:** Client-side image processing is highly sensitive to Garbage Collection (GC) overhead when processing high-frequency paths. Pre-allocating typed arrays (e.g., Float32Array) and calculating results within standard for loops greatly outpaces array `.reduce()`, `.filter()`, and `.push()`. Sorting a Float32Array naturally defaults to numeric values, thereby negating the need for custom comparator functions.
+**Action:** When performing heavy pixel data processing, allocate array length in advance using Float32Array and eschew ES6 array methods inside nested loops in favor of standard for loops.
