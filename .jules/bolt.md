@@ -1,0 +1,3 @@
+## 2024-05-19 - Garbage Collection Sensitivity in Client-side Image Processing
+**Learning:** Client-side image processing loops (e.g., scoring camera frames continuously) in this codebase are highly sensitive to Garbage Collection (GC) overhead. Dynamically allocating arrays and using higher-order array functions like `.push`, `.reduce`, and `.filter` cause significant performance bottlenecks in high-frequency execution paths.
+**Action:** Always pre-allocate typed arrays (e.g., `Float32Array`) and use basic `for` loops when writing or optimizing continuous frame processing algorithms or image manipulation functions in the frontend.
