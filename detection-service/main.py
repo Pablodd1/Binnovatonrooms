@@ -282,6 +282,10 @@ async def detect(
     )
 
 
+# Use a global ThreadPoolExecutor to avoid creating a new pool for every request
+from concurrent.futures import ThreadPoolExecutor
+inference_pool = ThreadPoolExecutor(max_workers=3)
+
 @app.post("/detect-batch")
 async def detect_batch(
     files: list[UploadFile] = File(...),
@@ -290,28 +294,47 @@ async def detect_batch(
     include_depth: bool = Form(True),
 ):
     start = time.time()
+
+    import asyncio
+    loop = asyncio.get_running_loop()
+
+    # Fast concurrent async read
+    async def process_file(file):
+        if not file.content_type or not file.content_type.startswith("image/"):
+            return None
+        contents = await file.read()
+        try:
+            return Image.open(io.BytesIO(contents)).convert("RGB")
+        except Exception:
+            return None
+
+    tasks = [process_file(f) for f in files[:6]]
+    images = await asyncio.gather(*tasks)
+
+    def run_models(img):
+        dets = run_sahi_inference(img, confidence) if use_sahi else run_yolo_inference(img, confidence)
+        dep = None
+        if include_depth:
+            try:
+                dep = run_depth_estimation(img)
+            except Exception:
+                pass
+        return dets, dep
+
     all_detections = []
     depths = []
 
-    for file in files[:6]:
-        if not file.content_type or not file.content_type.startswith("image/"):
-            continue
+    inference_tasks = []
+    for img in images:
+        if img is not None:
+            inference_tasks.append(loop.run_in_executor(inference_pool, run_models, img))
 
-        contents = await file.read()
-        try:
-            image = Image.open(io.BytesIO(contents)).convert("RGB")
-        except Exception:
-            continue
-
-        detections = run_sahi_inference(image, confidence) if use_sahi else run_yolo_inference(image, confidence)
-        all_detections.extend(detections)
-
-        if include_depth:
-            try:
-                depth = run_depth_estimation(image)
-                depths.append(depth)
-            except Exception:
-                pass
+    if inference_tasks:
+        results = await asyncio.gather(*inference_tasks)
+        for dets, dep in results:
+            all_detections.extend(dets)
+            if dep is not None:
+                depths.append(dep)
 
     elapsed = (time.time() - start) * 1000
 
