@@ -199,42 +199,56 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
   sampleCtx.drawImage(canvas, 0, 0, sampleWidth, sampleHeight);
   const data = sampleCtx.getImageData(0, 0, sampleWidth, sampleHeight).data;
 
+  // ⚡ BOLT OPTIMIZATION: Avoid dynamic allocations and array `.reduce`
+  // Pre-allocate TypedArrays and compute sums in a single pass to reduce GC overhead.
   let brightness = 0;
   let brightPixels = 0;
   let darkPixels = 0;
-  const grayscale: number[] = [];
-  const redChannel: number[] = [];
-  const greenChannel: number[] = [];
-  const blueChannel: number[] = [];
+  let sumR = 0;
+  let sumG = 0;
+  let sumB = 0;
+  const pixelCount = data.length / 4;
+  const grayscale = new Float32Array(pixelCount);
 
   for (let i = 0; i < data.length; i += 4) {
     const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
-    grayscale.push(gray);
-    redChannel.push(data[i]);
-    greenChannel.push(data[i + 1]);
-    blueChannel.push(data[i + 2]);
+    const pIdx = i / 4;
+    grayscale[pIdx] = gray;
+    sumR += data[i];
+    sumG += data[i + 1];
+    sumB += data[i + 2];
     brightness += gray;
     if (gray > 245) brightPixels += 1;
     if (gray < 15) darkPixels += 1;
   }
 
-  brightness = brightness / grayscale.length;
-  const variance =
-    grayscale.reduce((sum, gray) => sum + (gray - brightness) ** 2, 0) / Math.max(1, grayscale.length - 1);
-  const contrast = Math.sqrt(variance);
-  const glarePercent = (brightPixels / grayscale.length) * 100;
-  const underexposedPercent = (darkPixels / grayscale.length) * 100;
+  brightness = brightness / pixelCount;
 
-  const avgR = redChannel.reduce((s, v) => s + v, 0) / grayscale.length;
-  const avgG = greenChannel.reduce((s, v) => s + v, 0) / grayscale.length;
-  const avgB = blueChannel.reduce((s, v) => s + v, 0) / grayscale.length;
+  let sumVariance = 0;
+  for (let i = 0; i < pixelCount; i++) {
+    const diff = grayscale[i] - brightness;
+    sumVariance += diff * diff;
+  }
+  const variance = sumVariance / Math.max(1, pixelCount - 1);
+
+  const contrast = Math.sqrt(variance);
+  const glarePercent = (brightPixels / pixelCount) * 100;
+  const underexposedPercent = (darkPixels / pixelCount) * 100;
+
+  const avgR = sumR / pixelCount;
+  const avgG = sumG / pixelCount;
+  const avgB = sumB / pixelCount;
   const colorSpread = Math.max(avgR, avgG, avgB) - Math.min(avgR, avgG, avgB);
   const hasColorCast = colorSpread > 30;
 
+  // ⚡ BOLT OPTIMIZATION: Avoid array `.push` and multiple `.filter` passes.
   let edgeEnergy = 0;
   let centerEdgeEnergy = 0;
   let cornerEdgeEnergy = 0;
-  const gradientMagnitudes: number[] = [];
+
+  const gradCount = (sampleHeight - 2) * (sampleWidth - 2);
+  const gradientMagnitudes = new Float32Array(gradCount);
+  let gIdx = 0;
 
   for (let y = 1; y < sampleHeight - 1; y += 1) {
     for (let x = 1; x < sampleWidth - 1; x += 1) {
@@ -249,7 +263,7 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
       const gx = grayscale[idx + 1] - grayscale[idx - 1];
       const gy = grayscale[idx + sampleWidth] - grayscale[idx - sampleWidth];
       const magnitude = Math.sqrt(gx * gx + gy * gy);
-      gradientMagnitudes.push(magnitude);
+      gradientMagnitudes[gIdx++] = magnitude;
 
       edgeEnergy += Math.abs(laplacian);
       if (x > sampleWidth * 0.2 && x < sampleWidth * 0.8 && y > sampleHeight * 0.15 && y < sampleHeight * 0.85) {
@@ -261,19 +275,30 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
     }
   }
 
-  const sharpness = edgeEnergy / grayscale.length;
+  const sharpness = edgeEnergy / pixelCount;
   const centerDetailRatio = centerEdgeEnergy / Math.max(1, edgeEnergy);
   const cornerDetailRatio = cornerEdgeEnergy / Math.max(1, edgeEnergy);
   const megapixels = (canvas.width * canvas.height) / 1_000_000;
 
-  gradientMagnitudes.sort((a, b) => a - b);
-  const medianGradient = gradientMagnitudes[Math.floor(gradientMagnitudes.length / 2)] || 0;
-  const highGradientPixels = gradientMagnitudes.filter((g) => g > medianGradient * 3).length;
-  const textureVariance = highGradientPixels / Math.max(1, gradientMagnitudes.length);
+  // Float32Array sorts numerically by default, no comparator needed.
+  gradientMagnitudes.sort();
+  const medianGradient = gradientMagnitudes[Math.floor(gradCount / 2)] || 0;
+
+  const highThreshold = medianGradient * 3;
+  const lowThreshold = medianGradient * 0.1;
+  let highGradientPixels = 0;
+  let lowGradientPixels = 0;
+
+  for (let i = 0; i < gradCount; i++) {
+    const g = gradientMagnitudes[i];
+    if (g > highThreshold) highGradientPixels++;
+    if (g < lowThreshold) lowGradientPixels++;
+  }
+
+  const textureVariance = highGradientPixels / Math.max(1, gradCount);
   const hasFineTexture = textureVariance > 0.05;
 
-  const lowGradientPixels = gradientMagnitudes.filter((g) => g < medianGradient * 0.1).length;
-  const smoothPercent = (lowGradientPixels / Math.max(1, gradientMagnitudes.length)) * 100;
+  const smoothPercent = (lowGradientPixels / Math.max(1, gradCount)) * 100;
   const hasSmoothSurface = smoothPercent > 60;
 
   let noiseEstimate = 0;
