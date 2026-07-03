@@ -1,0 +1,22 @@
+# Build artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# Model weights (download at runtime or mount via volume)
+models/*.pt
+models/*.bin
+models/*.onnx
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE / editor
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db

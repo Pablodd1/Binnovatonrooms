@@ -1,0 +1,26 @@
+node_modules
+.next
+out
+dist
+.env
+.env*.local
+*.log
+.vercel
+coverage
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Detection model weights (large files)
+detection-service/models/*.pt
+detection-service/models/*.bin
+detection-service/models/*.onnx
+
+# Playwright
+test-results/
+playwright-report/
