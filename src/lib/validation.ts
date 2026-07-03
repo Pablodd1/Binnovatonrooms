@@ -53,6 +53,11 @@ export const reportsQuerySchema = z.object({
   severity: z.string().optional(),
 });
 
+export const statusUpdateSchema = z.object({
+  status: z.enum(["revision", "asignar", "cerrado"]),
+  closedReason: z.string().max(500).optional(),
+});
+
 export function validateRequest<T>(schema: z.ZodSchema<T>, data: unknown): T {
   const result = schema.safeParse(data);
   if (!result.success) {

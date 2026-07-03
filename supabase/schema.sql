@@ -36,6 +36,9 @@ create table if not exists public.reportes (
   lat double precision check (lat is null or (lat >= -90 and lat <= 90)),
   lng double precision check (lng is null or (lng >= -180 and lng <= 180)),
   quality jsonb,
+  status text not null default 'nuevo' check (status in ('nuevo', 'revision', 'asignar', 'cerrado')),
+  closed_reason text,
+  closed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -175,13 +178,14 @@ select
   date_trunc('day', created_at)::date as day,
   tipo_defecto,
   severidad,
+  status,
   especialista_requerido,
   count(*) as report_count,
   avg(nullif(diagnostico->>'confianza', '')::numeric) as avg_confidence,
   avg(nullif(diagnostico->>'urgencia_dias', '')::numeric) as avg_urgency_days,
   count(*) filter (where coalesce((diagnostico->>'requiere_revision_humana')::boolean, false) = true) as human_review_count
 from public.reportes
-group by 1, 2, 3, 4;
+group by 1, 2, 3, 4, 5;
 
 create or replace view public.reportes_risk_queue as
 select
@@ -193,6 +197,7 @@ select
   location_label,
   image_url,
   diagnostico,
+  status,
   case severidad
     when 'critica' then 100
     when 'alta' then 78
@@ -200,7 +205,7 @@ select
     else 18
   end as risk_score
 from public.reportes
-where severidad in ('alta', 'critica')
+where severidad in ('alta', 'critica') and status != 'cerrado'
 order by risk_score desc, created_at desc;
 
 create or replace view public.reportes_recent_queue as
@@ -214,12 +219,9 @@ select
   image_url,
   nullif(diagnostico->>'confianza', '')::numeric as confidence,
   nullif(diagnostico->>'urgencia_dias', '')::integer as urgency_days,
-  case
-    when severidad = 'critica' then 'asignar'
-    when severidad = 'alta' or coalesce((diagnostico->>'requiere_revision_humana')::boolean, false) = true then 'revision'
-    else 'nuevo'
-  end as status
+  status
 from public.reportes
+where status != 'cerrado'
 order by created_at desc
 limit 50;
 
@@ -290,3 +292,52 @@ where not exists (
   from public.instaladores existing
   where lower(existing.email) = lower(seed.email)
 );
+
+-- Report status transition function
+create or replace function public.transition_report_status(
+  target_id uuid,
+  new_status text,
+  closed_reason text default null
+)
+returns table (id uuid, status text, closed_reason text, closed_at timestamptz)
+language plpgsql
+set search_path = public
+as $$
+declare
+  current_status text;
+  valid_transition boolean;
+begin
+  select r.status into current_status
+  from public.reportes r
+  where r.id = target_id;
+
+  if not found then
+    raise exception 'Reporte no encontrado: %', target_id;
+  end if;
+
+  -- Valid transitions: nuevo→revision, revision→asignar, asignar→cerrado, nuevo→cerrado
+  valid_transition = (
+    (current_status = 'nuevo' and new_status = 'revision') or
+    (current_status = 'revision' and new_status = 'asignar') or
+    (current_status = 'asignar' and new_status = 'cerrado') or
+    (current_status = 'nuevo' and new_status = 'cerrado') or
+    (current_status = 'revision' and new_status = 'cerrado')
+  );
+
+  if not valid_transition then
+    raise exception 'Transicion invalida: % → %', current_status, new_status;
+  end if;
+
+  update public.reportes
+  set
+    status = new_status,
+    closed_reason = case when new_status = 'cerrado' then coalesce(closed_reason, '') else null end,
+    closed_at = case when new_status = 'cerrado' then now() else null end,
+    updated_at = now()
+  where id = target_id
+  returning id, status, closed_reason, closed_at
+  into id, status, closed_reason, closed_at;
+
+  return next;
+end;
+$$;

@@ -98,6 +98,15 @@ async function saveReport(input: {
   const supabase = getSupabaseAdmin();
   if (!supabase) return null;
 
+  // Compute initial workflow status from severity
+  const needsReview = input.diagnosis.requiere_revision_humana
+    || ["critica", "alta"].includes(input.diagnosis.severidad);
+  const initialStatus = input.diagnosis.severidad === "critica"
+    ? "asignar"
+    : needsReview
+      ? "revision"
+      : "nuevo";
+
   const { data, error } = await supabase
     .from("reportes")
     .insert({
@@ -112,6 +121,7 @@ async function saveReport(input: {
       lng: input.lng,
       quality: input.quality,
       user_id: input.userId || null,
+      status: initialStatus,
     })
     .select("id")
     .single();

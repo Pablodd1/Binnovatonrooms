@@ -51,7 +51,7 @@ export async function GET(request: Request) {
   // List reports with optional filters
   let query = supabase
     .from("reportes")
-    .select("id, created_at, tipo_defecto, severidad, especialista_requerido, location_label, image_url, diagnostico, risk_score, status");
+    .select("id, created_at, tipo_defecto, severidad, especialista_requerido, location_label, image_url, diagnostico, risk_score, status, closed_reason, closed_at");
 
   if (status) {
     query = query.eq("status", status);

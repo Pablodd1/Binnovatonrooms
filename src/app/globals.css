@@ -1454,3 +1454,310 @@ ol {
     font-size: 0.65rem;
   }
 }
+
+/* ─── Report Workflow & Status Management ─── */
+
+/* Feedback toast */
+.feedback-toast {
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+}
+
+.feedback-ok {
+  background: rgba(66, 211, 146, 0.12);
+  color: var(--green);
+  border-color: rgba(66, 211, 146, 0.4);
+}
+
+.feedback-err {
+  background: rgba(255, 105, 95, 0.12);
+  color: var(--red);
+  border-color: rgba(255, 105, 95, 0.4);
+}
+
+/* Closed report card styling */
+.report-card-closed {
+  opacity: 0.7;
+}
+
+.report-card-closed:hover {
+  opacity: 1;
+}
+
+.report-closed-reason {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-style: italic;
+  margin: 0 0 8px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+}
+
+/* Quick status actions on cards */
+.report-card-actions {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Workflow action buttons */
+.workflow-btn {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.workflow-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.workflow-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.workflow-btn-revision {
+  color: var(--yellow);
+  border-color: rgba(243, 189, 71, 0.4);
+}
+
+.workflow-btn-revision:hover {
+  background: rgba(243, 189, 71, 0.1);
+}
+
+.workflow-btn-asignar {
+  color: var(--red);
+  border-color: rgba(255, 105, 95, 0.4);
+}
+
+.workflow-btn-asignar:hover {
+  background: rgba(255, 105, 95, 0.1);
+}
+
+.workflow-btn-cerrado {
+  color: var(--green);
+  border-color: rgba(66, 211, 146, 0.4);
+}
+
+.workflow-btn-cerrado:hover {
+  background: rgba(66, 211, 146, 0.1);
+}
+
+/* Status pipeline visualization */
+.status-pipeline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin: 16px 0;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+
+.status-pipeline-step-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.status-pipeline-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 80px;
+}
+
+.status-pipeline-step span {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.status-pipeline-step.active span {
+  color: var(--text);
+}
+
+.status-pipeline-step.completed span {
+  color: var(--green);
+}
+
+.status-pipeline-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  background: transparent;
+  transition: all 0.3s;
+}
+
+.status-pipeline-step.active .status-pipeline-dot {
+  border-color: var(--blue);
+  background: var(--blue);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+}
+
+.status-pipeline-step.completed .status-pipeline-dot {
+  border-color: var(--green);
+  background: var(--green);
+}
+
+.status-pipeline-step.status-nuevo:not(.completed):not(.active) .status-pipeline-dot {
+  border-color: var(--blue);
+}
+
+.status-pipeline-step.status-revision:not(.completed):not(.active) .status-pipeline-dot {
+  border-color: var(--yellow);
+}
+
+.status-pipeline-step.status-asignar:not(.completed):not(.active) .status-pipeline-dot {
+  border-color: var(--red);
+}
+
+.status-pipeline-step.status-cerrado:not(.completed):not(.active) .status-pipeline-dot {
+  border-color: var(--green);
+}
+
+.status-pipeline-line {
+  width: 40px;
+  height: 2px;
+  background: var(--line);
+  margin: 0 4px;
+  margin-bottom: 26px; /* offset to align with dots, not labels */
+}
+
+.status-pipeline-line.completed {
+  background: var(--green);
+}
+
+/* Status transition bar on detail page */
+.status-transition-bar {
+  margin-top: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.status-transition-bar .muted-text {
+  font-size: 0.82rem;
+  margin-bottom: 10px;
+  display: block;
+}
+
+.status-transition-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Closed info section */
+.closed-info {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(66, 211, 146, 0.06);
+  border: 1px solid rgba(66, 211, 146, 0.2);
+  border-radius: 8px;
+}
+
+/* Close dialog */
+.close-dialog {
+  margin-top: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.close-dialog h4 {
+  margin: 0 0 12px;
+  color: var(--text);
+}
+
+.close-dialog .muted-text {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.82rem;
+}
+
+.closed-reason-input {
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 0.88rem;
+  font-family: inherit;
+  resize: vertical;
+  margin-bottom: 12px;
+  box-sizing: border-box;
+}
+
+.closed-reason-input:focus {
+  outline: none;
+  border-color: var(--green);
+}
+
+.closed-reason-input::placeholder {
+  color: var(--muted);
+}
+
+.close-dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Workflow panel enhancements */
+.workflow-panel .report-detail-section:last-child {
+  border-bottom: 0;
+}
+
+/* Responsive workflow */
+@media (max-width: 700px) {
+  .status-pipeline {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .status-pipeline-line {
+    width: 24px;
+    margin-bottom: 26px;
+  }
+
+  .status-pipeline-step {
+    min-width: 64px;
+  }
+
+  .status-pipeline-step span {
+    font-size: 0.68rem;
+  }
+
+  .report-card-actions {
+    flex-direction: column;
+  }
+
+  .close-dialog-actions {
+    flex-direction: column;
+  }
+}

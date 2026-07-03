@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import type { InspectionDiagnosis, InstallerMatch } from "@/lib/analysis-schema";
+import type { ReportStatus } from "@/lib/reports";
+import { STATUS_LABELS, VALID_TRANSITIONS, isValidTransition } from "@/lib/reports";
 
 type ReportImage = {
   id: string;
@@ -27,6 +29,9 @@ type ReportData = {
   lat: number | null;
   lng: number | null;
   quality: unknown;
+  status: string;
+  closed_reason: string | null;
+  closed_at: string | null;
   report_images: ReportImage[];
 };
 
@@ -37,15 +42,27 @@ const SEVERITY_LABELS: Record<string, string> = {
   baja: "Baja",
 };
 
+const STATUS_ACTION_LABELS: Partial<Record<ReportStatus, string>> = {
+  revision: "Marcar en revision",
+  asignar: "Asignar especialista",
+  cerrado: "Cerrar reporte",
+};
+
+const STATUS_WORKFLOW_STEPS: ReportStatus[] = ["nuevo", "revision", "asignar", "cerrado"];
+
 export default function ReportDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
+  const [showCloseDialog, setShowCloseDialog] = useState(false);
+  const [closedReason, setClosedReason] = useState("");
 
-  useEffect(() => {
+  const loadReport = useCallback(() => {
     if (!id) return;
+    setLoading(true);
     (async () => {
       try {
         const res = await fetch(`/api/reports?id=${id}`);
@@ -59,6 +76,8 @@ export default function ReportDetailPage() {
       }
     })();
   }, [id]);
+
+  useEffect(() => { loadReport(); }, [loadReport]);
 
   async function handleDownloadPdf() {
     if (!id) return;
@@ -80,6 +99,35 @@ export default function ReportDetailPage() {
     }
   }
 
+  async function handleTransition(newStatus: ReportStatus, reason?: string) {
+    if (!id || !report) return;
+    setTransitioning(true);
+    setError("");
+    try {
+      const body: { status: ReportStatus; closedReason?: string } = { status: newStatus };
+      if (newStatus === "cerrado" && reason) body.closedReason = reason;
+
+      const res = await fetch(`/api/reports/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "No se pudo actualizar el estado");
+      }
+
+      setShowCloseDialog(false);
+      setClosedReason("");
+      loadReport();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error desconocido");
+    } finally {
+      setTransitioning(false);
+    }
+  }
+
   function severityClass(sev: string) {
     if (sev === "critica") return "critica";
     if (sev === "alta") return "alta";
@@ -95,10 +143,13 @@ export default function ReportDetailPage() {
   }
 
   if (loading) return <div className="shell"><p>Cargando reporte...</p></div>;
-  if (error) return <div className="shell"><p style={{ color: "var(--red)" }}>{error}</p></div>;
+  if (error && !report) return <div className="shell"><p style={{ color: "var(--red)" }}>{error}</p></div>;
   if (!report) return null;
 
   const diag = report.diagnostico;
+  const currentStatus = report.status as ReportStatus;
+  const isClosed = currentStatus === "cerrado";
+  const allowedTransitions = VALID_TRANSITIONS[currentStatus] || [];
 
   return (
     <div className="shell">
@@ -116,6 +167,10 @@ export default function ReportDetailPage() {
           </Link>
         </div>
       </div>
+
+      {error && report && (
+        <div className="error-box"><span>&#9888;</span> {error}</div>
+      )}
 
       {/* Report Header */}
       <div className={`report-detail-header severity-border-${severityClass(report.severidad)}`}>
@@ -163,6 +218,105 @@ export default function ReportDetailPage() {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Workflow Status Panel */}
+        <div className="report-detail-section workflow-panel">
+          <h3>Estado del Flujo de Trabajo</h3>
+
+          {/* Status pipeline visualization */}
+          <div className="status-pipeline">
+            {STATUS_WORKFLOW_STEPS.map((step, i) => {
+              const stepIdx = STATUS_WORKFLOW_STEPS.indexOf(currentStatus);
+              const isActive = step === currentStatus;
+              const isPast = i < stepIdx;
+              return (
+                <div key={step} className="status-pipeline-step-wrapper">
+                  <div className={`status-pipeline-step ${isActive ? "active" : ""} ${isPast ? "completed" : ""} status-${step}`}>
+                    <div className="status-pipeline-dot" />
+                    <span>{STATUS_LABELS[step]}</span>
+                  </div>
+                  {i < STATUS_WORKFLOW_STEPS.length - 1 && (
+                    <div className={`status-pipeline-line ${isPast ? "completed" : ""}`} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Closed info */}
+          {isClosed && (
+            <div className="closed-info">
+              {report.closed_reason && (
+                <div className="detail-field">
+                  <span className="muted-text">Motivo de cierre</span>
+                  <p>{report.closed_reason}</p>
+                </div>
+              )}
+              {report.closed_at && (
+                <div className="detail-field">
+                  <span className="muted-text">Fecha de cierre</span>
+                  <p>{formatDate(report.closed_at)}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Transition actions */}
+          {!isClosed && allowedTransitions.length > 0 && (
+            <div className="status-transition-bar">
+              <span className="muted-text">Acciones disponibles:</span>
+              <div className="status-transition-actions">
+                {allowedTransitions.map((next) => (
+                  <button
+                    key={next}
+                    type="button"
+                    className={`workflow-btn workflow-btn-${next}`}
+                    disabled={transitioning}
+                    onClick={() => {
+                      if (next === "cerrado") {
+                        setShowCloseDialog(true);
+                      } else {
+                        handleTransition(next);
+                      }
+                    }}
+                  >
+                    {transitioning ? "Actualizando..." : STATUS_ACTION_LABELS[next] ?? next}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Close dialog */}
+          {showCloseDialog && (
+            <div className="close-dialog">
+              <h4>Cerrar Reporte</h4>
+              <label className="muted-text" htmlFor="closed-reason">
+                Motivo del cierre (opcional)
+              </label>
+              <textarea
+                id="closed-reason"
+                className="closed-reason-input"
+                placeholder="Ej: Reparado, Descartado, Falso positivo..."
+                value={closedReason}
+                onChange={(e) => setClosedReason(e.target.value)}
+                maxLength={500}
+              />
+              <div className="close-dialog-actions">
+                <button type="button" className="workflow-btn" onClick={() => setShowCloseDialog(false)}>
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="workflow-btn workflow-btn-cerrado"
+                  onClick={() => handleTransition("cerrado", closedReason)}
+                >
+                  Confirmar cierre
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Diagnosis */}

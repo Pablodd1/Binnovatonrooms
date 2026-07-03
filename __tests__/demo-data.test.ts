@@ -21,7 +21,7 @@ describe("demoAnalytics", () => {
 describe("demoReports", () => {
   it("returns valid report summaries", () => {
     const result = demoReports();
-    expect(result.length).toBe(3);
+    expect(result.length).toBe(4);
     expect(result[0].id).toBeDefined();
     expect(result[0].riskScore).toBeGreaterThan(0);
   });

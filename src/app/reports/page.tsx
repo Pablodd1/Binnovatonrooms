@@ -2,20 +2,21 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import type { ReportSummary } from "@/lib/reports";
+import type { ReportSummary, ReportStatus } from "@/lib/reports";
+import { STATUS_LABELS, VALID_TRANSITIONS, isValidTransition } from "@/lib/reports";
 
 const SEVERITY_ORDER: Record<string, number> = { critica: 4, alta: 3, media: 2, baja: 1 };
-const STATUS_LABELS: Record<string, string> = {
-  nuevo: "Nuevo",
-  revision: "En Revision",
-  asignar: "Por Asignar",
-  cerrado: "Cerrado",
-};
 const SEVERITY_LABELS: Record<string, string> = {
   critica: "Critica",
   alta: "Alta",
   media: "Media",
   baja: "Baja",
+};
+
+const STATUS_ACTION_LABELS: Partial<Record<ReportStatus, string>> = {
+  revision: "Marcar revision",
+  asignar: "Asignar",
+  cerrado: "Cerrar",
 };
 
 export default function ReportsPage() {
@@ -25,12 +26,22 @@ export default function ReportsPage() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterSeverity, setFilterSeverity] = useState<string>("all");
   const [sortBy, setSortBy] = useState<"date" | "severity" | "risk">("date");
+  const [transitioningId, setTransitioningId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
 
   // Update clock every 60s for "time ago" display
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60000);
     return () => clearInterval(timer);
   }, []);
+
+  // Auto-clear feedback after 3s
+  useEffect(() => {
+    if (feedback) {
+      const timer = setTimeout(() => setFeedback(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [feedback]);
 
   const loadReports = useCallback(async () => {
     try {
@@ -71,6 +82,30 @@ export default function ReportsPage() {
     return `Hace ${days}d`;
   }
 
+  async function handleQuickTransition(e: React.MouseEvent, reportId: string, currentStatus: ReportStatus, newStatus: ReportStatus) {
+    e.preventDefault(); // Prevent Link navigation
+    e.stopPropagation();
+    if (!isValidTransition(currentStatus, newStatus)) return;
+    setTransitioningId(reportId);
+    try {
+      const res = await fetch(`/api/reports/${reportId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Error al actualizar");
+      }
+      setFeedback({ type: "ok", msg: `Estado actualizado a "${STATUS_LABELS[newStatus]}"` });
+      loadReports();
+    } catch (err) {
+      setFeedback({ type: "err", msg: err instanceof Error ? err.message : "Error desconocido" });
+    } finally {
+      setTransitioningId(null);
+    }
+  }
+
   return (
     <div className="shell">
       <div className="topbar">
@@ -84,6 +119,13 @@ export default function ReportsPage() {
           </Link>
         </div>
       </div>
+
+      {/* Feedback toast */}
+      {feedback && (
+        <div className={`feedback-toast feedback-${feedback.type}`}>
+          {feedback.msg}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="reports-filters">
@@ -131,7 +173,7 @@ export default function ReportsPage() {
         <div className="reports-grid">
           {sorted.map((report) => (
             <Link key={report.id} href={`/reports/${report.id}`} className="report-card-link">
-              <div className={`report-card severity-border-${severityClass(report.severity)}`}>
+              <div className={`report-card severity-border-${severityClass(report.severity)}${report.status === "cerrado" ? " report-card-closed" : ""}`}>
                 <div className="report-card-header">
                   <span className={`severity ${severityClass(report.severity)}`}>
                     {SEVERITY_LABELS[report.severity] || report.severity}
@@ -143,6 +185,9 @@ export default function ReportsPage() {
                 <div className="report-card-body">
                   <h3>{report.defectType}</h3>
                   {report.location && <p className="report-location">{report.location}</p>}
+                  {report.status === "cerrado" && report.closedReason && (
+                    <p className="report-closed-reason">{report.closedReason}</p>
+                  )}
                   <div className="report-card-meta">
                     <span>{report.specialist}</span>
                     <span className="muted-text">{timeAgo(report.createdAt, now)}</span>
@@ -158,6 +203,22 @@ export default function ReportsPage() {
                     </div>
                   </div>
                 </div>
+                {/* Quick status actions */}
+                {report.status !== "cerrado" && (
+                  <div className="report-card-actions">
+                    {VALID_TRANSITIONS[report.status as ReportStatus]?.map((next) => (
+                      <button
+                        key={next}
+                        type="button"
+                        className={`workflow-btn workflow-btn-${next}`}
+                        disabled={transitioningId === report.id}
+                        onClick={(e) => handleQuickTransition(e, report.id, report.status as ReportStatus, next)}
+                      >
+                        {transitioningId === report.id ? "..." : STATUS_ACTION_LABELS[next] ?? next}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </Link>
           ))}

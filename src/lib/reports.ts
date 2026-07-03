@@ -1,5 +1,7 @@
 import type { DefectType, Severity } from "./analysis-schema";
 
+export type ReportStatus = "nuevo" | "revision" | "asignar" | "cerrado";
+
 export type ReportSummary = {
   id: string;
   createdAt: string;
@@ -11,14 +13,42 @@ export type ReportSummary = {
   confidence: number;
   urgencyDays: number;
   riskScore: number;
-  status: "nuevo" | "revision" | "asignar" | "cerrado";
+  status: ReportStatus;
+  closedReason: string | null;
+  closedAt: string | null;
 };
+
+export const STATUS_LABELS: Record<ReportStatus, string> = {
+  nuevo: "Nuevo",
+  revision: "En revision",
+  asignar: "Asignado",
+  cerrado: "Cerrado",
+};
+
+/** Valid status transitions for workflow enforcement */
+export const VALID_TRANSITIONS: Record<ReportStatus, ReportStatus[]> = {
+  nuevo: ["revision", "cerrado"],
+  revision: ["asignar", "cerrado"],
+  asignar: ["cerrado"],
+  cerrado: [],
+};
+
+export function isValidTransition(current: ReportStatus, next: ReportStatus): boolean {
+  return VALID_TRANSITIONS[current]?.includes(next) ?? false;
+}
 
 function riskScore(severity: Severity | string) {
   if (severity === "critica") return 100;
   if (severity === "alta") return 78;
   if (severity === "media") return 46;
   return 18;
+}
+
+/** Compute initial status from severity for new reports */
+function initialStatus(severity: Severity | string, needsReview: boolean): ReportStatus {
+  if (severity === "critica") return "asignar";
+  if (severity === "alta" || needsReview) return "revision";
+  return "nuevo";
 }
 
 type ReportRow = {
@@ -29,6 +59,9 @@ type ReportRow = {
   especialista_requerido: string;
   location_label: string | null;
   image_url: string | null;
+  status: string | null;
+  closed_reason: string | null;
+  closed_at: string | null;
   diagnostico: {
     confianza?: number;
     urgencia_dias?: number;
@@ -52,43 +85,75 @@ export function normalizeReports(rows: ReportRow[]): ReportSummary[] {
       confidence: row.diagnostico?.confianza ?? 0,
       urgencyDays: row.diagnostico?.urgencia_dias ?? 0,
       riskScore: score,
-      status: score === 100 ? "asignar" : needsReview ? "revision" : "nuevo"
+      status: (row.status as ReportStatus) || initialStatus(row.severidad, needsReview),
+      closedReason: row.closed_reason || null,
+      closedAt: row.closed_at || null,
     };
   });
 }
 
 export function demoReports(): ReportSummary[] {
   const now = Date.now();
-  return normalizeReports([
+  return [
     {
       id: "demo-electric-001",
-      created_at: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
-      tipo_defecto: "instalacion",
-      severidad: "critica",
-      especialista_requerido: "electricista",
-      location_label: "Cocina - toma GFCI",
-      image_url: null,
-      diagnostico: { confianza: 0.91, urgencia_dias: 0, requiere_revision_humana: true }
+      createdAt: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
+      defectType: "instalacion",
+      severity: "critica",
+      specialist: "electricista",
+      location: "Cocina - toma GFCI",
+      imageUrl: null,
+      confidence: 0.91,
+      urgencyDays: 0,
+      riskScore: 100,
+      status: "asignar",
+      closedReason: null,
+      closedAt: null,
     },
     {
       id: "demo-moisture-002",
-      created_at: new Date(now - 20 * 60 * 60 * 1000).toISOString(),
-      tipo_defecto: "humedad",
-      severidad: "alta",
-      especialista_requerido: "impermeabilizador",
-      location_label: "Bano principal - pared norte",
-      image_url: null,
-      diagnostico: { confianza: 0.86, urgencia_dias: 2, requiere_revision_humana: true }
+      createdAt: new Date(now - 20 * 60 * 60 * 1000).toISOString(),
+      defectType: "humedad",
+      severity: "alta",
+      specialist: "impermeabilizador",
+      location: "Bano principal - pared norte",
+      imageUrl: null,
+      confidence: 0.86,
+      urgencyDays: 2,
+      riskScore: 78,
+      status: "revision",
+      closedReason: null,
+      closedAt: null,
     },
     {
       id: "demo-crack-003",
-      created_at: new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      tipo_defecto: "grieta",
-      severidad: "media",
-      especialista_requerido: "estructurista",
-      location_label: "Sala - columna lateral",
-      image_url: null,
-      diagnostico: { confianza: 0.78, urgencia_dias: 14, requiere_revision_humana: true }
-    }
-  ]);
+      createdAt: new Date(now - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      defectType: "grieta",
+      severity: "media",
+      specialist: "estructurista",
+      location: "Sala - columna lateral",
+      imageUrl: null,
+      confidence: 0.78,
+      urgencyDays: 14,
+      riskScore: 46,
+      status: "cerrado",
+      closedReason: "Reparado por estructurista",
+      closedAt: new Date(now - 1 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+    {
+      id: "demo-finish-004",
+      createdAt: new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString(),
+      defectType: "acabado",
+      severity: "baja",
+      specialist: "pintor",
+      location: "Dormitorio principal - pared este",
+      imageUrl: null,
+      confidence: 0.65,
+      urgencyDays: 30,
+      riskScore: 18,
+      status: "nuevo",
+      closedReason: null,
+      closedAt: null,
+    },
+  ];
 }
