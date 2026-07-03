@@ -14,17 +14,55 @@ export async function GET(request: Request) {
   const session = await auth();
   log.info({ userId: session?.user?.id || "anonymous" }, "Reports request");
 
+  const { searchParams } = new URL(request.url);
+  const reportId = searchParams.get("id");
+  const status = searchParams.get("status");
+  const severity = searchParams.get("severity");
+  const limitParam = searchParams.get("limit");
+  const limit = Math.min(Math.max(Number(limitParam) || 50, 1), 200);
+
   const supabase = getSupabaseAdmin();
   if (!supabase) {
     log.info("Using demo reports data");
+    if (reportId) {
+      const demo = demoReports();
+      const found = demo.find((r) => r.id === reportId);
+      return NextResponse.json({ report: found || null, generatedFrom: "demo" });
+    }
     return NextResponse.json({ reports: demoReports(), generatedFrom: "demo" });
   }
 
-  const { data, error } = await supabase
+  // Single report fetch with images
+  if (reportId) {
+    const { data, error } = await supabase
+      .from("reportes")
+      .select("*, report_images(*)")
+      .eq("id", reportId)
+      .single();
+
+    if (error || !data) {
+      log.warn({ reportId, error: error?.message }, "Report not found");
+      return NextResponse.json({ report: null, generatedFrom: "supabase" });
+    }
+
+    return NextResponse.json({ report: data, generatedFrom: "supabase" });
+  }
+
+  // List reports with optional filters
+  let query = supabase
     .from("reportes")
-    .select("id,created_at,tipo_defecto,severidad,especialista_requerido,location_label,image_url,diagnostico")
+    .select("id, created_at, tipo_defecto, severidad, especialista_requerido, location_label, image_url, diagnostico, risk_score, status");
+
+  if (status) {
+    query = query.eq("status", status);
+  }
+  if (severity) {
+    query = query.eq("severidad", severity);
+  }
+
+  const { data, error } = await query
     .order("created_at", { ascending: false })
-    .limit(25);
+    .limit(limit);
 
   if (error) {
     log.error({ error: error.message }, "Reports query failed");

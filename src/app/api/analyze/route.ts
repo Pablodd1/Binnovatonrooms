@@ -289,14 +289,29 @@ function mergeYoloIntoDiagnosis(
   merged.visual_indicators = merged.visual_indicators.slice(0, 12);
 
   const defectTypeMap: Record<string, string> = {
+    // Construction-specific model classes (cazzz307/yolov8-crack-detection and similar)
     crack: "grieta",
+    cracks: "grieta",
+    longitudinal: "grieta",
+    transverse: "grieta",
+    alligator: "grieta",
     spalling: "acabado",
+    spall: "acabado",
+    pothole: "acabado",
     rust: "oxido",
-    moisture: "humedad",
-    pothole: "otro",
+    corrosion: "oxido",
+    corrosion_rust: "oxido",
+    exposed_rebar: "instalacion",
     rebar: "instalacion",
+    moisture: "humedad",
+    damp: "humedad",
     efflorescence: "humedad",
     stain: "acabado",
+    staining: "acabado",
+    water_stain: "humedad",
+    structural: "desplome",
+    collapse: "desplome",
+    // Fallback for unrecognized classes
   };
 
   for (const [yoloType, count] of Object.entries(summary.defectTypes)) {

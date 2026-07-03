@@ -17,7 +17,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("detection-service")
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+YOLO_MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "cazzz307/yolov8-crack-detection")
 logger.info(f"Using device: {DEVICE}")
+logger.info(f"YOLO model path: {YOLO_MODEL_PATH}")
 
 yolo_model = None
 depth_model = None
@@ -30,7 +32,7 @@ async def lifespan(app: FastAPI):
     logger.info("Loading models...")
     try:
         from ultralytics import YOLO
-        yolo_model = YOLO("yolov8m.pt")
+        yolo_model = YOLO(YOLO_MODEL_PATH)
         logger.info("YOLO model loaded")
     except Exception as e:
         logger.error(f"Failed to load YOLO: {e}")
@@ -181,7 +183,7 @@ def run_sahi_inference(image: Image.Image, confidence: float = 0.25) -> list[Det
 
         sahi_model = AutoDetectionModel.from_pretrained(
             model_type="ultralytics",
-            model_path="yolov8m.pt",
+            model_path=YOLO_MODEL_PATH,
             confidence_threshold=confidence,
             device=DEVICE,
         )
@@ -275,7 +277,7 @@ async def detect(
         processing_time_ms=round(elapsed, 2),
         device=DEVICE,
         model_versions={
-            "yolo": "yolov8m",
+            "yolo": YOLO_MODEL_PATH.split("/")[-1],
             "depth": "Depth-Anything-V2-Small",
             "sahi": "sahi" if use_sahi else "none",
         },

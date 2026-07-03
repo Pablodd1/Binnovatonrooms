@@ -25,7 +25,7 @@ export type InspectionAnalytics = {
   generatedFrom: "supabase" | "demo";
 };
 
-type ReportRow = {
+export type ReportRow = {
   created_at: string;
   tipo_defecto: DefectType | string;
   severidad: Severity | string;
@@ -136,4 +136,75 @@ export function demoAnalytics(): InspectionAnalytics {
   }));
 
   return buildAnalytics(rows, "demo");
+}
+
+// Heatmap data aggregation
+
+export type HeatmapPoint = {
+  x: number;
+  y: number;
+  defectType: string;
+  severity: string;
+  label: string;
+  confidence: number;
+};
+
+export type HeatmapData = {
+  points: HeatmapPoint[];
+  totalDefects: number;
+};
+
+export function buildHeatmapData(rows: ReportRow[]): HeatmapData {
+  const points: HeatmapPoint[] = [];
+  const severityWeight: Record<string, number> = { critica: 4, alta: 3, media: 2, baja: 1 };
+
+  for (const row of rows) {
+    const diag = row.diagnostico as {
+      visual_indicators?: Array<{
+        label: string;
+        confidence: number;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+      }>;
+    } | null;
+
+    if (!diag?.visual_indicators) continue;
+
+    for (const indicator of diag.visual_indicators) {
+      points.push({
+        x: indicator.x + (indicator.width || 0) / 2,
+        y: indicator.y + (indicator.height || 0) / 2,
+        defectType: row.tipo_defecto,
+        severity: row.severidad,
+        label: indicator.label,
+        confidence: indicator.confidence,
+      });
+    }
+  }
+
+  // Sort by severity weight then confidence (most severe first)
+  points.sort((a, b) =>
+    (severityWeight[b.severity] || 0) - (severityWeight[a.severity] || 0) ||
+    b.confidence - a.confidence
+  );
+
+  return { points, totalDefects: points.length };
+}
+
+export function demoHeatmapData(): HeatmapData {
+  return {
+    points: [
+      { x: 30, y: 45, defectType: "grieta", severity: "alta", label: "grieta longitudinal", confidence: 0.88 },
+      { x: 32, y: 48, defectType: "grieta", severity: "alta", label: "grieta ramificacion", confidence: 0.82 },
+      { x: 65, y: 30, defectType: "humedad", severity: "media", label: "mancha de humedad", confidence: 0.75 },
+      { x: 70, y: 35, defectType: "humedad", severity: "media", label: "eflorescencia", confidence: 0.71 },
+      { x: 20, y: 80, defectType: "oxido", severity: "baja", label: "corrosion superficial", confidence: 0.65 },
+      { x: 50, y: 60, defectType: "acabado", severity: "baja", label: "desconchado", confidence: 0.60 },
+      { x: 80, y: 70, defectType: "grieta", severity: "critica", label: "grieta estructural", confidence: 0.93 },
+      { x: 45, y: 20, defectType: "instalacion", severity: "media", label: "exposicion de tuberia", confidence: 0.68 },
+    ],
+    totalDefects: 8,
+  };
 }

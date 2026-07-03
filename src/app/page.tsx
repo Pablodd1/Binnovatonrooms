@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import DefectHeatmap from "@/components/DefectHeatmap";
+import type { HeatmapData } from "@/lib/analytics";
 import {
   AlertTriangle,
   Activity,
@@ -19,7 +22,8 @@ import {
   ShieldAlert,
   Sparkles,
   Thermometer,
-  Upload
+  Upload,
+  FileText
 } from "lucide-react";
 import clsx from "clsx";
 import type { InspectionDiagnosis, InstallerMatch } from "@/lib/analysis-schema";
@@ -153,6 +157,22 @@ function exportDiagnosis(analysis: AnalysisResponse | null, quality: QualityScor
   anchor.download = `buildscan-report-${analysis.reportId || Date.now()}.json`;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+async function downloadReportPdf(reportId: string) {
+  try {
+    const res = await fetch(`/api/reports/${reportId}/pdf`);
+    if (!res.ok) throw new Error("PDF generation failed");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `buildscan-report-${reportId}.html`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("PDF download failed:", err);
+  }
 }
 
 function formatAge(dateString: string) {
@@ -467,9 +487,14 @@ export default function Home() {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [analytics, setAnalytics] = useState<InspectionAnalytics | null>(null);
+  const [heatmap, setHeatmap] = useState<HeatmapData | null>(null);
   const [reports, setReports] = useState<ReportSummary[]>([]);
   const [error, setError] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareImageUrl, setCompareImageUrl] = useState<string | null>(null);
+  const [compareSliderPos, setCompareSliderPos] = useState(50);
+  const compareRef = useRef<HTMLDivElement>(null);
 
   const severe = analysis?.diagnosis.severidad === "alta" || analysis?.diagnosis.severidad === "critica";
   const evidenceMarkers = markerFallback(analysis);
@@ -557,14 +582,44 @@ export default function Home() {
   }, [selectedDeviceId]);
 
   const loadOperationalData = useCallback(async () => {
-    const [analyticsResponse, reportsResponse] = await Promise.all([
+    const [analyticsResponse, reportsResponse, heatmapResponse] = await Promise.all([
       fetch("/api/analytics"),
-      fetch("/api/reports")
+      fetch("/api/reports"),
+      fetch("/api/analytics/heatmap")
     ]);
     const nextAnalytics = (await analyticsResponse.json()) as InspectionAnalytics;
     const reportsPayload = (await reportsResponse.json()) as { reports: ReportSummary[] };
+    const heatmapData = (await heatmapResponse.json()) as HeatmapData;
     setAnalytics(nextAnalytics);
     setReports(reportsPayload.reports || []);
+    setHeatmap(heatmapData);
+  }, []);
+
+  const handleCompareToggle = useCallback(async () => {
+    if (compareMode) {
+      setCompareMode(false);
+      setCompareImageUrl(null);
+      return;
+    }
+    // Find a recent report with an image to compare against
+    if (reports.length === 0) {
+      setError("No hay reportes anteriores para comparar.");
+      return;
+    }
+    const withImage = reports.find((r) => r.imageUrl);
+    if (withImage?.imageUrl) {
+      setCompareImageUrl(withImage.imageUrl);
+      setCompareMode(true);
+    } else {
+      setError("No hay imagenes en reportes anteriores para comparar.");
+    }
+  }, [compareMode, reports]);
+
+  const handleCompareSliderMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!compareRef.current) return;
+    const rect = compareRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+    setCompareSliderPos(x);
   }, []);
 
   const startCamera = useCallback(async () => {
@@ -764,6 +819,12 @@ export default function Home() {
           <h1>Inspector visual de obra para telefono, laptop y camaras externas.</h1>
         </div>
         <div className="top-actions">
+          <Link href="/reports" style={{ textDecoration: "none" }}>
+            <button type="button">
+              <FileText size={18} />
+              <span>Reportes</span>
+            </button>
+          </Link>
           <div className={clsx("status-pill", quality.status)}>
             <Crosshair size={18} />
             <span>{qualityLabel(quality)}</span>
@@ -841,6 +902,16 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="heatmap-section">
+        {heatmap && (
+          <DefectHeatmap
+            points={heatmap.points}
+            totalDefects={heatmap.totalDefects}
+            referenceImage={previewUrl}
+          />
+        )}
+      </section>
+
       <section className="ops-grid">
         <div className="analytics-panel">
           <div className="section-title">
@@ -908,6 +979,15 @@ export default function Home() {
               <FileImage size={18} />
               Guardar foto
             </button>
+            <button
+              type="button"
+              onClick={handleCompareToggle}
+              className={compareMode ? "primary" : ""}
+              disabled={reports.length === 0 && !compareMode}
+            >
+              <Ruler size={18} />
+              {compareMode ? "Cerrar comparar" : "Comparar"}
+            </button>
           </div>
 
           <div className="viewer">
@@ -946,6 +1026,36 @@ export default function Home() {
                 <span>{marker.label}</span>
               </div>
             ))}
+            {compareMode && compareImageUrl && previewUrl && (
+              <div
+                ref={compareRef}
+                className="compare-slider"
+                onMouseMove={handleCompareSliderMove}
+              >
+                <img
+                  className="compare-before"
+                  src={compareImageUrl}
+                  alt="Reporte anterior"
+                  draggable={false}
+                />
+                <div
+                  className="compare-clip"
+                  style={{ width: `${compareSliderPos}%` }}
+                >
+                  <img
+                    className="compare-after-img"
+                    src={previewUrl}
+                    alt="Captura actual"
+                    draggable={false}
+                  />
+                </div>
+                <div className="compare-line" style={{ left: `${compareSliderPos}%` }} />
+                <div className="compare-labels">
+                  <span>Anterior</span>
+                  <span>Actual</span>
+                </div>
+              </div>
+            )}
             {severe ? (
               <div className="danger-overlay">
                 <ShieldAlert size={18} />
@@ -977,7 +1087,11 @@ export default function Home() {
             </button>
             <button type="button" onClick={() => exportDiagnosis(analysis, quality, captures)} disabled={!analysis}>
               <Download size={18} />
-              Exportar
+              Exportar JSON
+            </button>
+            <button type="button" onClick={() => analysis?.reportId && downloadReportPdf(analysis.reportId)} disabled={!analysis?.reportId}>
+              <FileText size={18} />
+              Descargar Reporte
             </button>
             <button type="button" onClick={clearCaptures} disabled={captures.length === 0}>
               Limpiar set
