@@ -14,9 +14,12 @@ import {
   Crosshair,
   Download,
   FileImage,
+  FlipHorizontal2,
+  Flashlight,
   ListChecks,
   Loader2,
   MapPin,
+  MoreHorizontal,
   Radar,
   Ruler,
   ShieldAlert,
@@ -495,6 +498,9 @@ export default function Home() {
   const [compareImageUrl, setCompareImageUrl] = useState<string | null>(null);
   const [compareSliderPos, setCompareSliderPos] = useState(50);
   const compareRef = useRef<HTMLDivElement>(null);
+  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
+  const [torchOn, setTorchOn] = useState(false);
+  const [showOverflow, setShowOverflow] = useState(false);
 
   const severe = analysis?.diagnosis.severidad === "alta" || analysis?.diagnosis.severidad === "critica";
   const evidenceMarkers = markerFallback(analysis);
@@ -615,10 +621,11 @@ export default function Home() {
     }
   }, [compareMode, reports]);
 
-  const handleCompareSliderMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  const handleCompareSliderMove = useCallback((e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     if (!compareRef.current) return;
     const rect = compareRef.current.getBoundingClientRect();
-    const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const x = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
     setCompareSliderPos(x);
   }, []);
 
@@ -633,7 +640,7 @@ export default function Home() {
     const constraints: MediaStreamConstraints = {
       video: selectedDeviceId
         ? { deviceId: { exact: selectedDeviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
-        : { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+        : { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
       audio: false
     };
 
@@ -653,7 +660,33 @@ export default function Home() {
       setIsCameraActive(false);
       setError("No pude activar la camara. Revise permisos, HTTPS, o use subir imagen.");
     }
-  }, [refreshDevices, selectedDeviceId, stopStream]);
+  }, [refreshDevices, selectedDeviceId, stopStream, facingMode]);
+
+  const toggleTorch = useCallback(async () => {
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track) return;
+    try {
+      const capabilities = track.getCapabilities() as { torch?: boolean };
+      if (!capabilities?.torch) return;
+      /* torch is a non-standard MediaTrackConstraint supported on Android Chrome */
+      await (track as { applyConstraints(c: Record<string, unknown>): Promise<void> }).applyConstraints({
+        advanced: [{ torch: !torchOn }],
+      });
+      setTorchOn(!torchOn);
+    } catch {
+      // Torch not supported on this device/browser
+    }
+  }, [torchOn]);
+
+  const toggleCameraFacing = useCallback(() => {
+    setFacingMode((prev) => prev === "environment" ? "user" : "environment");
+    // Restart camera with new facing mode after a tick
+    setTimeout(() => {
+      stopStream();
+      setSelectedDeviceId("");
+      setIsCameraActive(false);
+    }, 0);
+  }, [stopStream]);
 
   const captureFrame = useCallback(async (saveCapture = true) => {
     const video = videoRef.current;
@@ -960,8 +993,7 @@ export default function Home() {
       <section className="workspace">
         <div className="camera-panel">
           <div className="camera-toolbar">
-            <label>
-              Fuente
+            <label className="camera-source-select">
               <select value={selectedDeviceId} onChange={(event) => setSelectedDeviceId(event.target.value)}>
                 {devices.length === 0 ? <option value="">Camara predeterminada</option> : null}
                 {devices.map((device) => (
@@ -973,11 +1005,29 @@ export default function Home() {
             </label>
             <button type="button" onClick={startCamera}>
               <Camera size={18} />
-              Activar
+              <span className="btn-label-desktop">Activar</span>
             </button>
             <button type="button" onClick={() => captureFrame(true)}>
               <FileImage size={18} />
-              Guardar foto
+              <span className="btn-label-desktop">Guardar foto</span>
+            </button>
+            <button
+              type="button"
+              className={torchOn ? "primary" : ""}
+              onClick={toggleTorch}
+              disabled={!isCameraActive}
+              title="Linterna"
+            >
+              <Flashlight size={18} />
+              <span className="btn-label-desktop">{torchOn ? "Linterna ON" : "Linterna"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={toggleCameraFacing}
+              title="Cambiar camara"
+            >
+              <FlipHorizontal2 size={18} />
+              <span className="btn-label-desktop">Voltear</span>
             </button>
             <button
               type="button"
@@ -986,7 +1036,7 @@ export default function Home() {
               disabled={reports.length === 0 && !compareMode}
             >
               <Ruler size={18} />
-              {compareMode ? "Cerrar comparar" : "Comparar"}
+              <span className="btn-label-desktop">{compareMode ? "Cerrar comparar" : "Comparar"}</span>
             </button>
           </div>
 
@@ -1031,6 +1081,7 @@ export default function Home() {
                 ref={compareRef}
                 className="compare-slider"
                 onMouseMove={handleCompareSliderMove}
+                onTouchMove={handleCompareSliderMove}
               >
                 <img
                   className="compare-before"
@@ -1068,10 +1119,11 @@ export default function Home() {
           <div className="upload-row">
             <label className="upload-button">
               <Upload size={18} />
-              Subir imagen
+              <span className="btn-label-desktop">Subir imagen</span>
               <input
                 type="file"
                 accept="image/*"
+                capture="environment"
                 multiple
                 onChange={(event) => {
                   const files = event.target.files;
@@ -1085,17 +1137,37 @@ export default function Home() {
               {isAnalyzing ? <Loader2 className="spin" size={18} /> : <CheckCircle2 size={18} />}
               {actionText}
             </button>
-            <button type="button" onClick={() => exportDiagnosis(analysis, quality, captures)} disabled={!analysis}>
-              <Download size={18} />
-              Exportar JSON
-            </button>
-            <button type="button" onClick={() => analysis?.reportId && downloadReportPdf(analysis.reportId)} disabled={!analysis?.reportId}>
-              <FileText size={18} />
-              Descargar Reporte
-            </button>
-            <button type="button" onClick={clearCaptures} disabled={captures.length === 0}>
-              Limpiar set
-            </button>
+            <div className="overflow-actions-desktop">
+              <button type="button" onClick={() => exportDiagnosis(analysis, quality, captures)} disabled={!analysis}>
+                <Download size={18} />
+                Exportar JSON
+              </button>
+              <button type="button" onClick={() => analysis?.reportId && downloadReportPdf(analysis.reportId)} disabled={!analysis?.reportId}>
+                <FileText size={18} />
+                Descargar Reporte
+              </button>
+              <button type="button" onClick={clearCaptures} disabled={captures.length === 0}>
+                Limpiar set
+              </button>
+            </div>
+            <div className="overflow-menu-mobile">
+              <button type="button" className="overflow-trigger" onClick={() => setShowOverflow(!showOverflow)}>
+                <MoreHorizontal size={18} />
+              </button>
+              {showOverflow && (
+                <div className="overflow-dropdown">
+                  <button type="button" onClick={() => { exportDiagnosis(analysis, quality, captures); setShowOverflow(false); }} disabled={!analysis}>
+                    <Download size={16} /> Exportar JSON
+                  </button>
+                  <button type="button" onClick={() => { analysis?.reportId && downloadReportPdf(analysis.reportId); setShowOverflow(false); }} disabled={!analysis?.reportId}>
+                    <FileText size={16} /> Descargar Reporte
+                  </button>
+                  <button type="button" onClick={() => { clearCaptures(); setShowOverflow(false); }} disabled={captures.length === 0}>
+                    Limpiar set
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="capture-strip">
@@ -1211,11 +1283,11 @@ export default function Home() {
               />
             </label>
             <label>
-              LiDAR / mediciones
+              Mediciones y profundidad
               <textarea
                 value={lidarNotes}
                 onChange={(event) => setLidarNotes(event.target.value)}
-                placeholder="Ej. muro a 2.4 m, area humeda 45 x 30 cm, desnivel 1.5 cm"
+                placeholder="Ej. muro a 2.4 m, area humeda 45 x 30 cm, desnivel 1.5 cm, grieta de 12 cm"
               />
             </label>
             <button type="button" onClick={getLocation}>
@@ -1226,9 +1298,9 @@ export default function Home() {
 
           <div className="panel-block hardware">
             <h2>Hardware soportado</h2>
-            <p><Ruler size={16} /> iPhone/iPad con camara y mediciones LiDAR ingresadas.</p>
-            <p><Camera size={16} /> Webcam de laptop, USB/UVC, borescope o camara externa compatible.</p>
-            <p><Thermometer size={16} /> FLIR/termica: subir captura o usarla como camara si el sistema la expone.</p>
+            <p><Camera size={16} /> Camara del celular (frontal/trasera), webcam, USB/UVC o borescope.</p>
+            <p><Thermometer size={16} /> FLIR/termica: suba capturas termicas desde la galeria o conecteda directamente.</p>
+            <p><Ruler size={16} /> Para mediciones LiDAR nativas se requiere la app iOS (en desarrollo). Ingrese medidas manualmente.</p>
           </div>
         </aside>
       </section>

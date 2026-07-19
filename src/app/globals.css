@@ -33,7 +33,7 @@ textarea {
 
 button,
 .upload-button {
-  min-height: 42px;
+  min-height: 46px;
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--text);
@@ -1004,7 +1004,7 @@ ol {
 }
 
 .filter-group select {
-  min-height: 38px;
+  min-height: 46px;
 }
 
 .filter-count {
@@ -1759,5 +1759,150 @@ ol {
 
   .close-dialog-actions {
     flex-direction: column;
+  }
+}
+
+/* ─── Tier 3: Mobile-First + Camera & PWA ─── */
+
+/* Button label hiding on mobile (icons only) */
+.btn-label-desktop {
+  /* Visible by default on desktop */
+}
+
+/* Camera toolbar: icons-only compact on mobile */
+.camera-source-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.camera-source-select select {
+  width: 100%;
+}
+
+/* Overflow menu for secondary actions */
+.overflow-actions-desktop {
+  display: flex;
+  gap: 8px;
+}
+
+.overflow-menu-mobile {
+  display: none;
+  position: relative;
+}
+
+.overflow-trigger {
+  padding: 0 10px;
+}
+
+.overflow-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 30;
+  background: var(--panel-3);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.overflow-dropdown button {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 10px;
+  font-size: 0.85rem;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+}
+
+.overflow-dropdown button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Report detail meta flex-wrap fix */
+.report-detail-meta {
+  flex-wrap: wrap;
+}
+
+/* Compare slider handle: larger touch target */
+.compare-line::after {
+  width: 44px;
+  height: 44px;
+  font-size: 16px;
+}
+
+@media (max-width: 700px) {
+  /* Hide button text labels on mobile, show icons only */
+  .btn-label-desktop {
+    display: none;
+  }
+
+  /* Camera toolbar: compact horizontal scroll */
+  .camera-toolbar {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+    padding: 8px 10px;
+  }
+
+  .camera-toolbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .camera-toolbar button,
+  .camera-toolbar label {
+    flex-shrink: 0;
+  }
+
+  .camera-source-select {
+    min-width: 120px;
+  }
+
+  /* Show overflow menu, hide desktop actions */
+  .overflow-actions-desktop {
+    display: none;
+  }
+
+  .overflow-menu-mobile {
+    display: block;
+  }
+
+  /* Capture thumbnails: 3-column on mobile */
+  .capture-thumbs {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+
+  /* Upload row stays horizontal on mobile */
+  .upload-row {
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .upload-row .upload-button {
+    flex-shrink: 0;
+  }
+
+  .upload-row .primary {
+    flex-shrink: 0;
+  }
+
+  /* Torch button glow effect */
+  button.primary .lucide-flashlight,
+  .camera-toolbar button.primary {
+    box-shadow: 0 0 12px rgba(243, 189, 71, 0.4);
+  }
+
+  /* LiDAR renamed section */
+  .measurement-panel textarea {
+    min-height: 72px;
   }
 }

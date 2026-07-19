@@ -148,6 +148,18 @@ export default function DefectHeatmap({ points, totalDefects, referenceImage }: 
             );
             setHoveredPoint(found || null);
           }}
+          onTouchStart={(e) => {
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            const mx = (touch.clientX - rect.left) / rect.width * 100;
+            const my = (touch.clientY - rect.top) / rect.height * 100;
+            const found = points.find((p) =>
+              Math.abs(p.x - mx) < 5 && Math.abs(p.y - my) < 5
+            );
+            setHoveredPoint(found || null);
+          }}
           onMouseLeave={() => setHoveredPoint(null)}
         />
         {hoveredPoint && (
