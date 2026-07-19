@@ -46,11 +46,26 @@ function esc(value: string | null | undefined): string {
     .replace(/'/g, "&#39;");
 }
 
+/** Validate image URLs to only allow safe http(s) schemes (prevents javascript:/data: injection). */
+function safeImgSrc(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (/^https?:\/\//i.test(trimmed)) return esc(trimmed);
+  return null; // reject javascript:, data:, blob:, file:, etc.
+}
+
+const VALID_SEVERITIES = new Set(["critica", "alta", "media", "baja"]);
+function safeSeverityClass(sev: string | null | undefined): string {
+  const s = (sev || "").toLowerCase();
+  return VALID_SEVERITIES.has(s) ? s : "baja";
+}
+
 function buildPdfHtml(report: ReportRow): string {
   const diag = report.diagnostico;
-  const severityColor = report.severidad === "critica" ? "#ff695f"
-    : report.severidad === "alta" ? "#f3bd47"
-    : report.severidad === "media" ? "#7cc7ff"
+  const sevClass = safeSeverityClass(report.severidad);
+  const severityColor = sevClass === "critica" ? "#ff695f"
+    : sevClass === "alta" ? "#f3bd47"
+    : sevClass === "media" ? "#7cc7ff"
     : "#42d392";
 
   const evidenceItems = diag?.evidencia_visual?.map((e) => `<li>${esc(e)}</li>`).join("") || "<li>Sin evidencia</li>";
@@ -58,12 +73,16 @@ function buildPdfHtml(report: ReportRow): string {
   const stepItems = diag?.solucion_paso_a_paso?.map((s, i) => `<li><strong>${i + 1}.</strong> ${esc(s)}</li>`).join("") || "";
   const measureItems = diag?.mediciones_recomendadas?.map((m) => `<li>${esc(m)}</li>`).join("") || "";
 
-  const imagesHtml = report.report_images?.map((img) =>
-    img.image_url ? `<img src="${esc(img.image_url)}" style="max-width:100%;border-radius:8px;margin:8px 0;" />` : ""
-  ).join("") || (report.image_url ? `<img src="${esc(report.image_url)}" style="max-width:100%;border-radius:8px;margin:8px 0;" />` : "");
+  const buildImg = (url: string | null) => {
+    const safe = safeImgSrc(url);
+    return safe ? `<img src="${safe}" style="max-width:100%;border-radius:8px;margin:8px 0;" />` : "";
+  };
+  const imagesHtml = report.report_images?.map((img) => buildImg(img.image_url)).join("") || buildImg(report.image_url);
 
   return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>BuildScan AI - Reporte ${report.id.slice(0, 8)}</title>
+<html><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https:; style-src 'unsafe-inline'; script-src 'none'">
+<title>BuildScan AI - Reporte ${report.id.slice(0, 8)}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, Helvetica, sans-serif; color: #1a1a2e; background: #fff; padding: 40px; }
@@ -102,14 +121,14 @@ function buildPdfHtml(report: ReportRow): string {
   </div>
 
   <div style="display:flex;gap:12px;margin-bottom:24px;align-items:center;">
-    <span class="badge badge-${esc(report.severidad)}">${esc(report.severidad.toUpperCase())}</span>
+    <span class="badge badge-${sevClass}">${esc(report.severidad?.toUpperCase())}</span>
     <span style="font-weight:700;font-size:1.1rem;">${esc(report.tipo_defecto)}</span>
   </div>
 
   <div class="meta">
-    <div class="meta-item"><label>Ubicacion</label><span>${esc(report.location_label) || "No especificada"}</span></div>
+    <div class="meta-item"><label>Ubicacion</label><span>${esc(report.location_label ?? "No especificada")}</span></div>
     <div class="meta-item"><label>Especialista</label><span>${esc(report.especialista_requerido)}</span></div>
-    <div class="meta-item"><label>Camara</label><span>${esc(report.camera_label) || "No registrada"}</span></div>
+    <div class="meta-item"><label>Camara</label><span>${esc(report.camera_label ?? "No registrada")}</span></div>
     ${report.lat ? `<div class="meta-item"><label>Coordenadas</label><span>${Number(report.lat).toFixed(4)}, ${Number(report.lng).toFixed(4)}</span></div>` : ""}
   </div>
 

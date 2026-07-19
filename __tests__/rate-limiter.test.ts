@@ -19,7 +19,7 @@ describe("checkRateLimit", () => {
       process.env.NODE_ENV = "development";
       const result = await checkRateLimit("test-key", 5, 60000);
       expect(result.ok).toBe(true);
-      expect(result.remaining).toBe(Infinity);
+      expect(result.remaining).toBeGreaterThan(0);
     });
 
     it("FAILS CLOSED in production (denies request)", async () => {

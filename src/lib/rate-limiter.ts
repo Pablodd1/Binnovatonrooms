@@ -5,6 +5,10 @@ export interface RateLimitResult {
   limit: number;
 }
 
+/** Sentinel used when rate limiting is disabled (dev mode). Avoids Infinity which
+ *  serializes to an invalid HTTP header value in X-RateLimit-Remaining. */
+const UNLIMITED = Number.MAX_SAFE_INTEGER;
+
 async function checkRateLimitWithKv(
   key: string,
   limit: number,
@@ -41,16 +45,24 @@ export async function checkRateLimit(
 ): Promise<RateLimitResult> {
   const isProduction = process.env.NODE_ENV === "production";
   const kvConfigured = process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN;
+  // Explicit opt-out for self-hosted deployments without Vercel KV
+  const explicitlyDisabled = process.env.RATE_LIMIT_DISABLED === "1" ||
+    process.env.RATE_LIMIT_DISABLED === "true";
+
+  // Explicit disable always wins (escape hatch for self-hosted)
+  if (explicitlyDisabled) {
+    return { ok: true, remaining: UNLIMITED, resetAt: 0, limit: UNLIMITED };
+  }
 
   // If Vercel KV is not configured:
   // - In production, FAIL CLOSED (deny) to prevent abuse of expensive endpoints
   // - In development, allow (no KV needed for local dev)
   if (!kvConfigured) {
     if (isProduction) {
-      console.error("Rate limiter KV not configured in production — denying request");
+      console.error("Rate limiter KV not configured in production — denying request. Set KV_REST_API_URL and KV_REST_API_TOKEN, or RATE_LIMIT_DISABLED=1 to bypass.");
       return { ok: false, remaining: 0, resetAt: Date.now() + windowMs, limit };
     }
-    return { ok: true, remaining: Infinity, resetAt: 0, limit: Infinity };
+    return { ok: true, remaining: UNLIMITED, resetAt: 0, limit: UNLIMITED };
   }
 
   try {
@@ -61,7 +73,7 @@ export async function checkRateLimit(
     if (isProduction) {
       return { ok: false, remaining: 0, resetAt: Date.now() + windowMs, limit };
     }
-    return { ok: true, remaining: Infinity, resetAt: 0, limit: Infinity };
+    return { ok: true, remaining: UNLIMITED, resetAt: 0, limit: UNLIMITED };
   }
 }
 

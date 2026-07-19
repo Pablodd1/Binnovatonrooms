@@ -18,7 +18,7 @@ import { requireGeminiConfig } from "@/lib/server-config";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { buildUserPrompt, buildFollowUpPrompt, SYSTEM_PROMPT } from "@/lib/vision-prompt";
 import { auth } from "@/lib/auth";
-import { createRequestLogger, generateRequestId } from "@/lib/logger";
+import { createRequestLogger, generateRequestId, logger } from "@/lib/logger";
 import {
   detectDefectsBatch,
   detectionToEvidenceMarkers,
@@ -65,7 +65,7 @@ async function storeImage(bytes: Buffer, mimeType: string) {
   });
 
   if (error) {
-    console.error("Image upload failed", error);
+    logger.error({ error: error.message, path }, "Image upload failed");
     return null;
   }
 
@@ -127,7 +127,7 @@ async function saveReport(input: {
     .single();
 
   if (error) {
-    console.error("Report save failed", error);
+    logger.error({ error: error.message }, "Report save failed");
     return null;
   }
 
@@ -146,7 +146,7 @@ async function saveReport(input: {
     );
 
     if (imagesError) {
-      console.error("Report image save failed", imagesError);
+      logger.error({ error: imagesError.message }, "Report image save failed");
     }
   }
 
