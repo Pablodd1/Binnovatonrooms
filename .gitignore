@@ -24,3 +24,9 @@ detection-service/models/*.onnx
 # Playwright
 test-results/
 playwright-report/
+
+# Unrelated projects
+Real-state/
+
+# ZCode internal
+.zcode/
