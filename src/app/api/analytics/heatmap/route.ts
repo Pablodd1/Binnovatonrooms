@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { auth } from "@/lib/auth";
 import { buildHeatmapData, demoHeatmapData, type ReportRow } from "@/lib/analytics";
 import { createRequestLogger, generateRequestId } from "@/lib/logger";
 
@@ -9,7 +10,9 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const requestId = generateRequestId();
   const log = createRequestLogger(requestId, request);
-  log.info("Heatmap request");
+
+  const session = await auth();
+  log.info({ userId: session?.user?.id || "anonymous" }, "Heatmap request");
 
   const supabase = getSupabaseAdmin();
   if (!supabase) {
@@ -20,6 +23,7 @@ export async function GET(request: Request) {
   const { data, error } = await supabase
     .from("reportes")
     .select("id, created_at, tipo_defecto, severidad, especialista_requerido, diagnostico")
+    .eq("user_id", session?.user?.id || "")
     .order("created_at", { ascending: false })
     .limit(200);
 

@@ -39,16 +39,28 @@ export async function checkRateLimit(
   limit: number,
   windowMs: number
 ): Promise<RateLimitResult> {
-  // If Vercel KV is not configured, skip rate limiting (local dev fallback)
-  if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+  const isProduction = process.env.NODE_ENV === "production";
+  const kvConfigured = process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN;
+
+  // If Vercel KV is not configured:
+  // - In production, FAIL CLOSED (deny) to prevent abuse of expensive endpoints
+  // - In development, allow (no KV needed for local dev)
+  if (!kvConfigured) {
+    if (isProduction) {
+      console.error("Rate limiter KV not configured in production — denying request");
+      return { ok: false, remaining: 0, resetAt: Date.now() + windowMs, limit };
+    }
     return { ok: true, remaining: Infinity, resetAt: 0, limit: Infinity };
   }
 
   try {
     return await checkRateLimitWithKv(key, limit, windowMs);
   } catch (error) {
-    // If KV is misconfigured or unavailable, allow the request rather than crashing
-    console.error("Rate limiter unavailable, allowing request:", error);
+    console.error("Rate limiter error:", error);
+    // In production, fail closed on KV errors; in dev, allow
+    if (isProduction) {
+      return { ok: false, remaining: 0, resetAt: Date.now() + windowMs, limit };
+    }
     return { ok: true, remaining: Infinity, resetAt: 0, limit: Infinity };
   }
 }

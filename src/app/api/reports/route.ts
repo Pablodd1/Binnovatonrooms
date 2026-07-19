@@ -32,13 +32,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ reports: demoReports(), generatedFrom: "demo" });
   }
 
-  // Single report fetch with images
+  // Single report fetch with images (scoped to current user)
   if (reportId) {
-    const { data, error } = await supabase
+    let singleQuery = supabase
       .from("reportes")
       .select("*, report_images(*)")
-      .eq("id", reportId)
-      .single();
+      .eq("id", reportId);
+
+    if (session?.user?.id) {
+      singleQuery = singleQuery.eq("user_id", session.user.id);
+    }
+
+    const { data, error } = await singleQuery.single();
 
     if (error || !data) {
       log.warn({ reportId, error: error?.message }, "Report not found");
@@ -48,10 +53,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ report: data, generatedFrom: "supabase" });
   }
 
-  // List reports with optional filters
+  // List reports with optional filters (scoped to current user in production)
   let query = supabase
     .from("reportes")
-    .select("id, created_at, tipo_defecto, severidad, especialista_requerido, location_label, image_url, diagnostico, risk_score, status, closed_reason, closed_at");
+    .select("id, created_at, tipo_defecto, severidad, especialista_requerido, location_label, image_url, diagnostico, risk_score, status, closed_reason, closed_at, user_id");
+
+  // Scope to current user when authenticated (defense in depth alongside RLS)
+  if (session?.user?.id) {
+    query = query.eq("user_id", session.user.id);
+  }
 
   if (status) {
     query = query.eq("status", status);

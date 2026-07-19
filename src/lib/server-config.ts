@@ -2,6 +2,7 @@ export type RuntimeHealth = {
   geminiConfigured: boolean;
   supabaseConfigured: boolean;
   storageConfigured: boolean;
+  authConfigured: boolean;
   model: string;
   missing: string[];
 };
@@ -14,11 +15,16 @@ export function getRuntimeHealth(): RuntimeHealth {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) missing.push("NEXT_PUBLIC_SUPABASE_URL");
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) missing.push("SUPABASE_SERVICE_ROLE_KEY");
   if (!process.env.SUPABASE_BUCKET) missing.push("SUPABASE_BUCKET");
+  // AUTH_SECRET required in production for NextAuth JWT signing
+  if (process.env.NODE_ENV === "production" && !process.env.AUTH_SECRET) {
+    missing.push("AUTH_SECRET");
+  }
 
   return {
     geminiConfigured: Boolean(process.env.GEMINI_API_KEY),
     supabaseConfigured: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
     storageConfigured: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.SUPABASE_BUCKET),
+    authConfigured: Boolean(process.env.AUTH_SECRET) || process.env.NODE_ENV !== "production",
     model,
     missing
   };
@@ -33,4 +39,11 @@ export function requireGeminiConfig() {
     apiKey: process.env.GEMINI_API_KEY,
     model: process.env.GEMINI_MODEL || "gemini-3.5-flash"
   };
+}
+
+/** Throws if AUTH_SECRET is missing in production (NextAuth needs it for JWT signing). */
+export function requireAuthSecret() {
+  if (process.env.NODE_ENV === "production" && !process.env.AUTH_SECRET) {
+    throw new Error("Missing AUTH_SECRET. Required in production for secure JWT sessions.");
+  }
 }

@@ -35,6 +35,17 @@ function formatDate(iso: string): string {
   });
 }
 
+/** Escape user/AI-generated content before interpolating into HTML to prevent XSS. */
+function esc(value: string | null | undefined): string {
+  if (value == null) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function buildPdfHtml(report: ReportRow): string {
   const diag = report.diagnostico;
   const severityColor = report.severidad === "critica" ? "#ff695f"
@@ -42,14 +53,14 @@ function buildPdfHtml(report: ReportRow): string {
     : report.severidad === "media" ? "#7cc7ff"
     : "#42d392";
 
-  const evidenceItems = diag?.evidencia_visual?.map((e) => `<li>${e}</li>`).join("") || "<li>Sin evidencia</li>";
-  const riskItems = diag?.riesgos?.map((r) => `<li>${r}</li>`).join("") || "";
-  const stepItems = diag?.solucion_paso_a_paso?.map((s, i) => `<li><strong>${i + 1}.</strong> ${s}</li>`).join("") || "";
-  const measureItems = diag?.mediciones_recomendadas?.map((m) => `<li>${m}</li>`).join("") || "";
+  const evidenceItems = diag?.evidencia_visual?.map((e) => `<li>${esc(e)}</li>`).join("") || "<li>Sin evidencia</li>";
+  const riskItems = diag?.riesgos?.map((r) => `<li>${esc(r)}</li>`).join("") || "";
+  const stepItems = diag?.solucion_paso_a_paso?.map((s, i) => `<li><strong>${i + 1}.</strong> ${esc(s)}</li>`).join("") || "";
+  const measureItems = diag?.mediciones_recomendadas?.map((m) => `<li>${esc(m)}</li>`).join("") || "";
 
   const imagesHtml = report.report_images?.map((img) =>
-    img.image_url ? `<img src="${img.image_url}" style="max-width:100%;border-radius:8px;margin:8px 0;" />` : ""
-  ).join("") || (report.image_url ? `<img src="${report.image_url}" style="max-width:100%;border-radius:8px;margin:8px 0;" />` : "");
+    img.image_url ? `<img src="${esc(img.image_url)}" style="max-width:100%;border-radius:8px;margin:8px 0;" />` : ""
+  ).join("") || (report.image_url ? `<img src="${esc(report.image_url)}" style="max-width:100%;border-radius:8px;margin:8px 0;" />` : "");
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>BuildScan AI - Reporte ${report.id.slice(0, 8)}</title>
@@ -91,14 +102,14 @@ function buildPdfHtml(report: ReportRow): string {
   </div>
 
   <div style="display:flex;gap:12px;margin-bottom:24px;align-items:center;">
-    <span class="badge badge-${report.severidad}">${report.severidad.toUpperCase()}</span>
-    <span style="font-weight:700;font-size:1.1rem;">${report.tipo_defecto}</span>
+    <span class="badge badge-${esc(report.severidad)}">${esc(report.severidad.toUpperCase())}</span>
+    <span style="font-weight:700;font-size:1.1rem;">${esc(report.tipo_defecto)}</span>
   </div>
 
   <div class="meta">
-    <div class="meta-item"><label>Ubicacion</label><span>${report.location_label || "No especificada"}</span></div>
-    <div class="meta-item"><label>Especialista</label><span>${report.especialista_requerido}</span></div>
-    <div class="meta-item"><label>Camara</label><span>${report.camera_label || "No registrada"}</span></div>
+    <div class="meta-item"><label>Ubicacion</label><span>${esc(report.location_label) || "No especificada"}</span></div>
+    <div class="meta-item"><label>Especialista</label><span>${esc(report.especialista_requerido)}</span></div>
+    <div class="meta-item"><label>Camara</label><span>${esc(report.camera_label) || "No registrada"}</span></div>
     ${report.lat ? `<div class="meta-item"><label>Coordenadas</label><span>${Number(report.lat).toFixed(4)}, ${Number(report.lng).toFixed(4)}</span></div>` : ""}
   </div>
 
@@ -106,8 +117,8 @@ function buildPdfHtml(report: ReportRow): string {
 
   ${diag ? `
   <div class="section"><h2>Diagnostico</h2>
-    <div class="field"><label>Ubicacion del defecto</label><p>${diag.ubicacion}</p></div>
-    <div class="field"><label>Causa probable</label><p>${diag.causa_probable}</p></div>
+    <div class="field"><label>Ubicacion del defecto</label><p>${esc(diag.ubicacion)}</p></div>
+    <div class="field"><label>Causa probable</label><p>${esc(diag.causa_probable)}</p></div>
     <div class="field"><label>Confianza del analisis</label>
       <div class="confidence-bar"><div class="confidence-fill" style="width:${Math.round(diag.confianza * 100)}%"></div></div>
       <div class="confidence-text">${Math.round(diag.confianza * 100)}% ${diag.requiere_revision_humana ? "(revision humana requerida)" : ""}</div>
@@ -123,7 +134,7 @@ function buildPdfHtml(report: ReportRow): string {
   ` : "<p>No hay datos de diagnostico disponibles.</p>"}
 
   <div class="footer">
-    Generado por BuildScan AI &mdash; ${new Date().toISOString().split("T")[0]} &mdash; ID: ${report.id}
+    Generado por BuildScan AI &mdash; ${new Date().toISOString().split("T")[0]} &mdash; ID: ${esc(report.id)}
   </div>
 </body></html>`;
 }
@@ -150,6 +161,7 @@ export async function GET(
     .from("reportes")
     .select("*, report_images(*)")
     .eq("id", id)
+    .eq("user_id", session.user.id)
     .single();
 
   if (error || !report) {

@@ -23,6 +23,7 @@ export async function GET(request: Request) {
   const { data, error } = await supabase
     .from("reportes")
     .select("created_at,tipo_defecto,severidad,especialista_requerido,diagnostico")
+    .eq("user_id", session?.user?.id || "")
     .order("created_at", { ascending: false })
     .limit(500);
 
