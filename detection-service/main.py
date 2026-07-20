@@ -32,7 +32,7 @@ def resolve_yolo_model_path(path: str) -> str:
     Supports:
     - Local .pt file path (returned as-is)
     - HuggingFace repo like 'user/repo' → downloads best.pt via huggingface_hub
-    - HuggingFace repo with file like 'user/repo/file.pt' → downloaded
+    - HuggingFace repo with file like 'user/repo/path/to/file.pt' → downloaded
     - Ultralytics hub ID (yolov8n.pt etc.) → returned as-is
     """
     # Local file exists — use directly
@@ -44,17 +44,24 @@ def resolve_yolo_model_path(path: str) -> str:
         return path
 
     # HuggingFace repo — resolve via huggingface_hub
+    # HF repo IDs are 'namespace/repo_name'. Anything after the first 2 segments
+    # is the file path within the repo.
     try:
         from huggingface_hub import hf_hub_download
-        # If user specified user/repo/file.pt, split them
         parts = path.split("/")
-        if len(parts) >= 3 and parts[-1].endswith(".pt"):
-            repo_id = "/".join(parts[:-1])
-            filename = parts[-1]
+        # Always treat first 2 segments as repo_id (namespace/repo_name)
+        repo_id = "/".join(parts[:2])
+        # Everything after is the filename within the repo
+        if len(parts) > 2:
+            filename = "/".join(parts[2:])
         else:
-            # Default to best.pt in the repo root
-            repo_id = path
+            # Just 'user/repo' — default to best.pt
             filename = "best.pt"
+
+        # Validate filename ends with .pt
+        if not filename.endswith(".pt"):
+            filename = filename + "/best.pt" if filename else "best.pt"
+
         logger.info(f"Downloading YOLO weights from HF: {repo_id}/{filename}")
         local_path = hf_hub_download(repo_id=repo_id, filename=filename)
         logger.info(f"YOLO weights cached at: {local_path}")
