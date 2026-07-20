@@ -356,14 +356,11 @@ export async function POST(request: Request) {
   const requestId = generateRequestId();
   const log = createRequestLogger(requestId, request);
 
-  const session = await auth();
-  if (!session?.user) {
-    log.warn("Analyze request rejected: unauthenticated");
-    return NextResponse.json({ error: "Unauthorized. Sign in at /login." }, { status: 401 });
-  }
-  const userId = session.user.id;
+  // Auth optional — record user if logged in, but allow anonymous use
+  const session = await auth().catch(() => null);
+  const userId = session?.user?.id;
 
-  log.info({ userId }, "Analyze request started");
+  log.info({ userId: userId || "anonymous" }, "Analyze request started");
 
   const rateLimit = await checkRateLimit(`analyze:${getClientIp(request)}`, 20, 5 * 60 * 1000);
   if (!rateLimit.ok) {

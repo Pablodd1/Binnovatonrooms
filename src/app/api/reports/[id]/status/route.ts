@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { validateRequest } from "@/lib/validation";
-import { statusUpdateSchema } from "@/lib/validation";
+import { validateRequest, statusUpdateSchema } from "@/lib/validation";
 import { createRequestLogger, generateRequestId } from "@/lib/logger";
 
 export const runtime = "nodejs";
@@ -22,13 +20,6 @@ export async function PATCH(
   const requestId = generateRequestId();
   const log = createRequestLogger(requestId, request);
   const { id } = await params;
-
-  // Auth required
-  const session = await auth();
-  if (!session?.user?.id) {
-    log.warn("Status update rejected: unauthenticated");
-    return NextResponse.json({ error: "Autenticacion requerida" }, { status: 401 });
-  }
 
   // Validate input
   let body: { status: string; closedReason?: string };

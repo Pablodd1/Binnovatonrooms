@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { auth } from "@/lib/auth";
 import { createRequestLogger, generateRequestId } from "@/lib/logger";
 import type { InspectionDiagnosis } from "@/lib/analysis-schema";
 
@@ -166,11 +165,6 @@ export async function GET(
   const log = createRequestLogger(requestId, request);
   const { id } = await params;
 
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const supabase = getSupabaseAdmin();
   if (!supabase) {
     return NextResponse.json({ error: "Database not configured" }, { status: 500 });
@@ -180,7 +174,6 @@ export async function GET(
     .from("reportes")
     .select("*, report_images(*)")
     .eq("id", id)
-    .eq("user_id", session.user.id)
     .single();
 
   if (error || !report) {
