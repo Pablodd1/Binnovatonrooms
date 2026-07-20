@@ -55,10 +55,12 @@ export async function PATCH(
   }
 
   // Call the transition function with RPC
+  // Note: param name is "reason" (not "closed_reason") to avoid colliding with the
+  // table column of the same name inside the plpgsql function body.
   const { data, error } = await supabase.rpc("transition_report_status", {
     target_id: id,
     new_status: body.status,
-    closed_reason: body.closedReason ?? null,
+    reason: body.closedReason ?? null,
   });
 
   if (error) {

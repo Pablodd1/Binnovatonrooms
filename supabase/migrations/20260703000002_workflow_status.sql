@@ -30,7 +30,7 @@ create index if not exists reportes_status_workflow_idx on public.reportes (stat
 create or replace function public.transition_report_status(
   target_id uuid,
   new_status text,
-  closed_reason text default null
+  reason text default null
 )
 returns table (id uuid, status text, closed_reason text, closed_at timestamptz)
 language plpgsql
@@ -65,7 +65,7 @@ begin
   update public.reportes
   set
     status = new_status,
-    closed_reason = case when new_status = 'cerrado' then coalesce(closed_reason, '') else null end,
+    closed_reason = case when new_status = 'cerrado' then coalesce(reason, '') else null end,
     closed_at = case when new_status = 'cerrado' then now() else null end,
     updated_at = now()
   where id = target_id
