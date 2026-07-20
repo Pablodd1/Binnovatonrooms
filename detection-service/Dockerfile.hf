@@ -1,0 +1,38 @@
+# HuggingFace Spaces Dockerfile for BuildScan Detection Service
+# HF Spaces require port 7860 and non-root user with write perms to /data
+
+FROM python:3.11-slim
+
+# System dependencies for OpenCV + image processing
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# HF Spaces convention: app lives in /app, persistent cache in /data
+WORKDIR /app
+
+# Create /data for HF cache (persisted across restarts on HF Spaces)
+RUN mkdir -p /data && chmod 777 /data
+
+# Set cache dirs to /data so model weights persist between cold starts
+ENV HF_HOME=/data/hf_cache \
+    TRANSFORMERS_CACHE=/data/hf_cache \
+    ULTRALYTICS_CACHE=/data/ultralytics_cache \
+    PORT=7860
+
+# Install Python deps first (better layer caching)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy app code
+COPY main.py .
+
+# HF Spaces run as user "user" (uid 1000) — create and switch
+RUN useradd -m -u 1000 user && chown -R user:user /app /data
+USER user
+
+EXPOSE 7860
+
+# uvicorn with single worker (HF free tier has 2 vCPU, 16GB RAM)
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860", "--workers", "1"]

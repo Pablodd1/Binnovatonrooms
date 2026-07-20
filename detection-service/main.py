@@ -57,7 +57,16 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("NEXT_PUBLIC_APP_URL", "http://localhost:3000")],
+    # Allow comma-separated origins via NEXT_PUBLIC_APP_URL or CORS_ORIGINS env.
+    # Defaults to localhost for local dev.
+    allow_origins=[
+        origin.strip()
+        for origin in os.getenv(
+            "CORS_ORIGINS",
+            os.getenv("NEXT_PUBLIC_APP_URL", "http://localhost:3000"),
+        ).split(",")
+        if origin.strip()
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -343,4 +352,6 @@ def _merge_detections(detections: list[DetectionResult]) -> list[DetectionResult
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # HF Spaces uses port 7860 by convention; allow override via PORT env
+    port = int(os.getenv("PORT", "7860"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
