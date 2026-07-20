@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import DefectHeatmap from "@/components/DefectHeatmap";
+import CaptureCoach from "@/components/CaptureCoach";
+import ShotProgress from "@/components/ShotProgress";
 import type { HeatmapData } from "@/lib/analytics";
 import {
   AlertTriangle,
@@ -16,17 +18,20 @@ import {
   FileImage,
   FlipHorizontal2,
   Flashlight,
+  Grid3x3,
   ListChecks,
   Loader2,
   MapPin,
   MoreHorizontal,
   Radar,
   Ruler,
+  Settings,
   ShieldAlert,
   Sparkles,
   Thermometer,
   Upload,
-  FileText
+  FileText,
+  X
 } from "lucide-react";
 import clsx from "clsx";
 import type { InspectionDiagnosis, InstallerMatch } from "@/lib/analysis-schema";
@@ -501,6 +506,11 @@ export default function Home() {
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const [torchOn, setTorchOn] = useState(false);
   const [showOverflow, setShowOverflow] = useState(false);
+  const [activeTab, setActiveTab] = useState<"capture" | "reports" | "analytics">("capture");
+  const [showFramingGrid, setShowFramingGrid] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+  const [shutterFlash, setShutterFlash] = useState(false);
+  const resultsRef = useRef<HTMLElement>(null);
 
   const severe = analysis?.diagnosis.severidad === "alta" || analysis?.diagnosis.severidad === "critica";
   const evidenceMarkers = markerFallback(analysis);
@@ -514,13 +524,6 @@ export default function Home() {
   const dimensionReady = hasDimensionCapture && hasMeasurementReference;
   const dimensionMode = dimensionReady ? "Alta" : hasMeasurementReference ? "Media" : "Solo estimacion";
   const inspectionCompleteness = Math.min(100, Math.round(((captures.length >= 4 ? 4 : captures.length) / 4) * 100));
-  const coachTone = quality.grade === "P" ? "perfect" : quality.grade === "A" ? "good" : "repeat";
-  const coachSummary =
-    quality.grade === "P"
-      ? "Mejor captura disponible"
-      : quality.grade === "A"
-        ? "Buena, optimizable"
-        : "Repetir para precision";
   const playbook = [
     quality.status === "mala" ? "Repetir captura antes de analizar." : "Captura valida para diagnostico.",
     captures.length >= 3 ? "Set fotografico suficiente para comparar contexto y detalle." : "Capture frontal, rasante y close-up antes de analizar.",
@@ -718,6 +721,24 @@ export default function Home() {
     return item;
   }, [addCapture, cameraLabel]);
 
+  /** Shutter button handler: starts camera if off, otherwise captures + flash. */
+  const handleShutter = useCallback(() => {
+    if (!isCameraActive) {
+      startCamera();
+      return;
+    }
+    setShutterFlash(true);
+    window.setTimeout(() => setShutterFlash(false), 250);
+    captureFrame(true).catch(() => setError("No se pudo capturar la imagen."));
+  }, [captureFrame, isCameraActive, startCamera]);
+
+  // Auto-scroll to results when analysis completes
+  useEffect(() => {
+    if (analysis && resultsRef.current) {
+      resultsRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [analysis]);
+
   const getLocation = useCallback(() => {
     if (!navigator.geolocation) {
       setError("Geolocalizacion no disponible en este navegador.");
@@ -846,29 +867,65 @@ export default function Home() {
 
   return (
     <main className="shell">
-      <section className="topbar">
+      <section className="topbar topbar-compact">
         <div>
           <p className="eyebrow">BuildScan AI</p>
-          <h1>Inspector visual de obra para telefono, laptop y camaras externas.</h1>
+          <h1>Inspector de obra</h1>
         </div>
         <div className="top-actions">
-          <Link href="/reports" style={{ textDecoration: "none" }}>
-            <button type="button">
-              <FileText size={18} />
-              <span>Reportes</span>
-            </button>
-          </Link>
-          <div className={clsx("status-pill", quality.status)}>
-            <Crosshair size={18} />
-            <span>{qualityLabel(quality)}</span>
+          <div className={clsx("status-pill", quality.status)} title={qualityLabel(quality)}>
+            <Crosshair size={16} />
+            <span>{quality.grade}</span>
           </div>
-          <div className="status-pill neutral">
-            <Activity size={18} />
-            <span>{analytics?.generatedFrom === "supabase" ? "Datos reales" : "Demo analytics"}</span>
-          </div>
+          <button
+            type="button"
+            className="settings-trigger"
+            onClick={() => setShowSettings(true)}
+            title="Ajustes"
+            aria-label="Ajustes"
+          >
+            <Settings size={18} />
+          </button>
         </div>
       </section>
 
+      {/* Tab bar */}
+      <nav className="tab-bar" role="tablist" aria-label="Navegación principal">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "capture"}
+          className={clsx("tab-btn", activeTab === "capture" && "active")}
+          onClick={() => setActiveTab("capture")}
+        >
+          <Camera size={18} />
+          <span>Capturar</span>
+        </button>
+        <Link
+          href="/reports"
+          role="tab"
+          aria-selected={activeTab === "reports"}
+          className={clsx("tab-btn", activeTab === "reports" && "active")}
+          onClick={() => setActiveTab("reports")}
+        >
+          <FileText size={18} />
+          <span>Reportes</span>
+        </Link>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "analytics"}
+          className={clsx("tab-btn", activeTab === "analytics" && "active")}
+          onClick={() => setActiveTab("analytics")}
+        >
+          <BarChart3 size={18} />
+          <span>Analítica</span>
+        </button>
+      </nav>
+
+      {/* ============== ANALYTICS TAB ============== */}
+      {activeTab === "analytics" && (
+        <>
       <section className="dashboard">
         <article className="kpi-card">
           <span>Reportes</span>
@@ -989,6 +1046,18 @@ export default function Home() {
           ))}
         </div>
       </section>
+        </>
+      )}
+
+      {/* ============== CAPTURE TAB ============== */}
+      {activeTab === "capture" && (
+        <div className="tab-content capture-tab">
+
+      {/* Shot progress strip — guides user through the 5-shot set */}
+      <ShotProgress
+        shots={INSPECTION_SHOTS}
+        capturedCount={captures.length}
+      />
 
       <section className="workspace">
         <div className="camera-panel">
@@ -1038,6 +1107,15 @@ export default function Home() {
               <Ruler size={18} />
               <span className="btn-label-desktop">{compareMode ? "Cerrar comparar" : "Comparar"}</span>
             </button>
+            <button
+              type="button"
+              className={showFramingGrid ? "primary" : ""}
+              onClick={() => setShowFramingGrid(!showFramingGrid)}
+              title="Guía de encuadre"
+            >
+              <Grid3x3 size={18} />
+              <span className="btn-label-desktop">Cuadrícula</span>
+            </button>
           </div>
 
           <div className="viewer">
@@ -1049,19 +1127,47 @@ export default function Home() {
                 <p>Active una camara o suba una imagen de la obra.</p>
               </div>
             ) : null}
-            <div className="scan-grid" />
-            <div className={clsx("capture-coach", coachTone)}>
-              <strong>{quality.grade}</strong>
-              <span>{coachSummary}</span>
-              <small>{quality.frameWidth ? `${quality.frameWidth} x ${quality.frameHeight}` : "sin captura"}</small>
+
+            {/* Framing guide (rule-of-thirds + corner brackets) */}
+            {isCameraActive && showFramingGrid && (
+              <div className="framing-guide" aria-hidden="true">
+                <div className="framing-third framing-third-v" style={{ left: "33.33%" }} />
+                <div className="framing-third framing-third-v" style={{ left: "66.66%" }} />
+                <div className="framing-third framing-third-h" style={{ top: "33.33%" }} />
+                <div className="framing-third framing-third-h" style={{ top: "66.66%" }} />
+                <div className="framing-corner framing-corner-tl" />
+                <div className="framing-corner framing-corner-tr" />
+                <div className="framing-corner framing-corner-bl" />
+                <div className="framing-corner framing-corner-br" />
+              </div>
+            )}
+
+            {/* Smart capture coach overlay — live actionable guidance */}
+            <CaptureCoach quality={quality} isCameraActive={isCameraActive} hasFrame={Boolean(quality.frameWidth)} />
+
+            {/* Shutter flash animation */}
+            {shutterFlash && <div className="shutter-flash" aria-hidden="true" />}
+
+            {/* Shutter button — large, on the viewer */}
+            <div className="shutter-area">
+              <button
+                type="button"
+                className={clsx("shutter-btn", !isCameraActive && "shutter-btn-inactive", quality.grade === "P" && "shutter-btn-ready")}
+                onClick={handleShutter}
+                disabled={isAnalyzing}
+                aria-label={isCameraActive ? "Tomar foto" : "Activar cámara"}
+              >
+                {isCameraActive ? (
+                  <span className="shutter-inner" />
+                ) : (
+                  <Camera size={28} />
+                )}
+              </button>
+              <span className="shutter-label">
+                {isCameraActive ? "Tomar foto" : "Activar cámara"}
+              </span>
             </div>
-            <div className="distance-rail" aria-hidden="true">
-              <span>muy cerca</span>
-              <i />
-              <span>optimo</span>
-              <i />
-              <span>muy lejos</span>
-            </div>
+
             {evidenceMarkers.map((marker) => (
               <div
                 className="evidence-marker"
@@ -1313,7 +1419,7 @@ export default function Home() {
       ) : null}
 
       {analysis ? (
-        <section className="results">
+        <section className="results" ref={resultsRef}>
           <div className="diagnosis">
             <p className="eyebrow">Diagnostico por {analysis.model}</p>
             <div className="result-heading">
@@ -1384,6 +1490,65 @@ export default function Home() {
           </div>
         </section>
       ) : null}
+
+      {/* Settings bottom sheet */}
+      {showSettings && (
+        <div className="bottom-sheet-overlay" onClick={() => setShowSettings(false)}>
+          <div className="bottom-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="bottom-sheet-header">
+              <h2>Ajustes</h2>
+              <button type="button" className="bottom-sheet-close" onClick={() => setShowSettings(false)} aria-label="Cerrar">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="bottom-sheet-body">
+              <div className="panel-block">
+                <h2>Guía visual</h2>
+                <div className="grade-grid">
+                  <div className={clsx("grade-card", quality.grade === "P" && "active")}><strong>P</strong><span>Best: medir y diagnosticar</span></div>
+                  <div className={clsx("grade-card", quality.grade === "A" && "active")}><strong>A</strong><span>Good: diagnostico usable</span></div>
+                  <div className={clsx("grade-card", quality.grade === "R" && "active")}><strong>R</strong><span>Repeat: baja precision</span></div>
+                </div>
+                <div className="coach-checks">
+                  {quality.checks.map((check) => (
+                    <div className={clsx("coach-check", check.status === "ok" ? "ok" : check.status === "warn" ? "warn" : "bad")} key={check.label}>
+                      <span>{check.label}</span>
+                      <strong>{check.value}</strong>
+                    </div>
+                  ))}
+                </div>
+                {quality.guidance.length > 0 && (
+                  <ul className="coach-guidance">
+                    {quality.guidance.slice(0, 4).map((tip, i) => <li key={i}>{tip}</li>)}
+                  </ul>
+                )}
+              </div>
+              <div className="panel-block">
+                <h2>Contexto</h2>
+                <label>Ubicacion / area
+                  <input value={locationLabel} onChange={(e) => setLocationLabel(e.target.value)} placeholder="Ej. Bano principal, pared norte" />
+                </label>
+                <label>Mediciones y profundidad
+                  <textarea value={lidarNotes} onChange={(e) => setLidarNotes(e.target.value)} placeholder="Ej. muro a 2.4 m, area humeda 45 x 30 cm, desnivel 1.5 cm, grieta de 12 cm" />
+                </label>
+                <button type="button" onClick={getLocation}>
+                  <MapPin size={18} />
+                  Usar GPS
+                </button>
+              </div>
+              <div className="panel-block hardware">
+                <h2>Hardware soportado</h2>
+                <p><Camera size={16} /> Camara del celular (frontal/trasera), webcam, USB/UVC o borescope.</p>
+                <p><Thermometer size={16} /> FLIR/termica: suba capturas termicas desde la galeria.</p>
+                <p><Ruler size={16} /> Para mediciones LiDAR nativas se requiere la app iOS (en desarrollo).</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+        </div>
+      )}
     </main>
   );
 }

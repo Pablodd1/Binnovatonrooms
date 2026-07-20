@@ -1906,3 +1906,446 @@ ol {
     min-height: 72px;
   }
 }
+
+/* ─── Tier 4: Camera-First Mobile Redesign ─── */
+
+/* Compact topbar */
+.topbar-compact {
+  padding: 12px 16px;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar-compact h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.topbar-compact .top-actions {
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.topbar-compact .status-pill {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 0.78rem;
+}
+
+.settings-trigger {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+/* Tab bar */
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-bottom: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  backdrop-filter: blur(8px);
+}
+
+.tab-btn {
+  flex: 1;
+  min-height: 44px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tab-btn:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+}
+
+.tab-btn.active {
+  background: rgba(66, 211, 146, 0.12);
+  color: var(--green);
+  border-color: rgba(66, 211, 146, 0.4);
+}
+
+.tab-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Shot progress strip */
+.shot-progress {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.shot-progress::-webkit-scrollbar {
+  display: none;
+}
+
+.shot-dot {
+  flex: 1;
+  min-width: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.shot-dot:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.shot-dot.active {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: var(--blue);
+}
+
+.shot-dot.captured {
+  color: var(--green);
+}
+
+.shot-dot-circle {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.shot-dot.captured .shot-dot-circle {
+  background: var(--green);
+  color: #062114;
+  border-color: var(--green);
+}
+
+.shot-dot-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* Smart capture coach overlay */
+.capture-coach-overlay {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(16, 24, 32, 0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  max-width: calc(100% - 20px);
+  pointer-events: none;
+}
+
+.coach-good { border-color: rgba(66, 211, 146, 0.6); }
+.coach-warn { border-color: rgba(243, 189, 71, 0.6); }
+.coach-bad  { border-color: rgba(255, 105, 95, 0.7); }
+
+.coach-icon {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.coach-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.coach-grade {
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1;
+}
+
+.coach-good .coach-grade { color: var(--green); }
+.coach-warn .coach-grade { color: var(--yellow); }
+.coach-bad  .coach-grade { color: var(--red); }
+
+.coach-message {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.2;
+}
+
+/* Framing guide (rule-of-thirds + corner brackets) */
+.framing-guide {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.framing-third {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.framing-third-v {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.framing-third-h {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+.framing-corner {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-color: rgba(255, 255, 255, 0.5);
+  border-style: solid;
+  border-width: 0;
+}
+
+.framing-corner-tl { top: 16px; left: 16px; border-top-width: 2px; border-left-width: 2px; }
+.framing-corner-tr { top: 16px; right: 16px; border-top-width: 2px; border-right-width: 2px; }
+.framing-corner-bl { bottom: 90px; left: 16px; border-bottom-width: 2px; border-left-width: 2px; }
+.framing-corner-br { bottom: 90px; right: 16px; border-bottom-width: 2px; border-right-width: 2px; }
+
+/* Shutter button */
+.shutter-area {
+  position: absolute;
+  bottom: 16px;
+  left: 0;
+  right: 0;
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.shutter-btn {
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  border: 4px solid #fff;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: transform 0.1s, background 0.2s;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.shutter-btn:active {
+  transform: scale(0.92);
+}
+
+.shutter-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.shutter-btn-inactive {
+  background: var(--green);
+  border-color: #fff;
+  color: #062114;
+}
+
+.shutter-btn-ready {
+  border-color: var(--green);
+  animation: shutter-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes shutter-pulse {
+  0%, 100% { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), 0 0 0 0 rgba(66, 211, 146, 0.5); }
+  50% { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), 0 0 0 14px rgba(66, 211, 146, 0); }
+}
+
+.shutter-inner {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.shutter-btn-inactive .shutter-inner {
+  display: none;
+}
+
+.shutter-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Shutter flash animation */
+.shutter-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: #fff;
+  animation: flash-fade 0.25s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes flash-fade {
+  0% { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+
+/* Bottom sheet (settings) */
+.bottom-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: sheet-fade-in 0.2s ease-out;
+}
+
+@keyframes sheet-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.bottom-sheet {
+  width: 100%;
+  max-width: 600px;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: 16px 16px 0 0;
+  padding: 0;
+  animation: sheet-slide-up 0.25s ease-out;
+}
+
+@keyframes sheet-slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.bottom-sheet-header {
+  position: sticky;
+  top: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  z-index: 1;
+}
+
+.bottom-sheet-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.bottom-sheet-close {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.bottom-sheet-body {
+  padding: 0;
+}
+
+/* Hide old control panel on mobile (replaced by bottom sheet) */
+@media (max-width: 700px) {
+  .control-panel {
+    display: none;
+  }
+}
+
+/* Capture tab layout adjustments */
+.capture-tab .workspace {
+  grid-template-columns: 1fr;
+}
+
+.capture-tab .viewer {
+  min-height: 60vh;
+  aspect-ratio: 3/4;
+  max-height: 75vh;
+}
+
+@media (min-width: 1100px) {
+  .capture-tab .workspace {
+    grid-template-columns: 1fr 360px;
+  }
+  .capture-tab .control-panel {
+    display: grid !important;
+  }
+}
+
+/* Hide old scan-grid and distance-rail (replaced by framing guide) */
+.scan-grid,
+.distance-rail {
+  display: none !important;
+}
+
+/* Hide old capture-coach badge (replaced by CaptureCoach overlay) */
+.capture-coach {
+  display: none !important;
+}
