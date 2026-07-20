@@ -1,0 +1,23 @@
+# Render Blueprint for BuildScan Detection Service
+# Docs: https://render.com/docs/blueprint-spec
+# Deploy via: render.com/dashboard → New → Blueprint → connect GitHub repo
+
+services:
+  - type: web
+    name: buildscan-detection
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerContext: detection-service
+    dockerfilePath: ./detection-service/Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: CORS_ORIGINS
+        value: https://binnovatonrooms.vercel.app
+      - key: YOLO_MODEL_PATH
+        value: cazzz307/yolov8-crack-detection
+      - key: PORT
+        value: 8000
+    # Render free tier: 512 MB RAM, 0.1 CPU. Cold start ~50s after 15 min idle.
+    # If you hit OOM (PyTorch + Transformers need ~1.5GB), upgrade to Starter ($7/mo, 512MB-2GB).
