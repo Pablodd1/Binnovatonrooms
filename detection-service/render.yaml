@@ -16,7 +16,7 @@ services:
       - key: CORS_ORIGINS
         value: https://binnovatonrooms.vercel.app
       - key: YOLO_MODEL_PATH
-        value: cazzz307/yolov8-crack-detection
+        value: OpenSistemas/YOLOv8-crack-seg/yolov8s/weights/best.pt
       - key: PORT
         value: 8000
     # Render free tier: 512 MB RAM, 0.1 CPU. Cold start ~50s after 15 min idle.

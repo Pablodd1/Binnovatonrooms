@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("detection-service")
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-YOLO_MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "cazzz307/yolov8-crack-detection")
+YOLO_MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "OpenSistemas/YOLOv8-crack-seg/yolov8s/weights/best.pt")
 logger.info(f"Using device: {DEVICE}")
 logger.info(f"YOLO model path: {YOLO_MODEL_PATH}")
 

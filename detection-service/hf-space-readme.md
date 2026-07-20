@@ -31,7 +31,7 @@ Set these as HF Spaces **Secrets** or **Variables**:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `YOLO_MODEL_PATH` | `cazzz307/yolov8-crack-detection` | HuggingFace YOLO model repo |
+| `YOLO_MODEL_PATH` | `OpenSistemas/YOLOv8-crack-seg/yolov8s/weights/best.pt` | HuggingFace YOLO model repo |
 | `CORS_ORIGINS` | (none) | Comma-separated allowed origins (your Vercel app URL) |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | Fallback CORS origin |
 
