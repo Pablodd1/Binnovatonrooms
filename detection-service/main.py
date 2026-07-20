@@ -26,13 +26,53 @@ depth_model = None
 depth_processor = None
 
 
+def resolve_yolo_model_path(path: str) -> str:
+    """Resolve a YOLO model reference to a local .pt file path.
+
+    Supports:
+    - Local .pt file path (returned as-is)
+    - HuggingFace repo like 'user/repo' → downloads best.pt via huggingface_hub
+    - HuggingFace repo with file like 'user/repo/file.pt' → downloaded
+    - Ultralytics hub ID (yolov8n.pt etc.) → returned as-is
+    """
+    # Local file exists — use directly
+    if os.path.exists(path):
+        return path
+
+    # If it has no slash, it's likely a local file or ultralytics name
+    if "/" not in path:
+        return path
+
+    # HuggingFace repo — resolve via huggingface_hub
+    try:
+        from huggingface_hub import hf_hub_download
+        # If user specified user/repo/file.pt, split them
+        parts = path.split("/")
+        if len(parts) >= 3 and parts[-1].endswith(".pt"):
+            repo_id = "/".join(parts[:-1])
+            filename = parts[-1]
+        else:
+            # Default to best.pt in the repo root
+            repo_id = path
+            filename = "best.pt"
+        logger.info(f"Downloading YOLO weights from HF: {repo_id}/{filename}")
+        local_path = hf_hub_download(repo_id=repo_id, filename=filename)
+        logger.info(f"YOLO weights cached at: {local_path}")
+        return local_path
+    except Exception as e:
+        logger.error(f"Failed to download YOLO from HuggingFace: {e}")
+        return path
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global yolo_model, depth_model, depth_processor
     logger.info("Loading models...")
     try:
         from ultralytics import YOLO
-        yolo_model = YOLO(YOLO_MODEL_PATH)
+        resolved_path = resolve_yolo_model_path(YOLO_MODEL_PATH)
+        logger.info(f"Loading YOLO from resolved path: {resolved_path}")
+        yolo_model = YOLO(resolved_path)
         logger.info("YOLO model loaded")
     except Exception as e:
         logger.error(f"Failed to load YOLO: {e}")
