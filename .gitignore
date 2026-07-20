@@ -30,3 +30,4 @@ Real-state/
 
 # ZCode internal
 .zcode/
+.railway_*.json
