@@ -43,7 +43,6 @@ export async function checkRateLimit(
   limit: number,
   windowMs: number
 ): Promise<RateLimitResult> {
-  const isProduction = process.env.NODE_ENV === "production";
   const kvConfigured = process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN;
   // Explicit opt-out for self-hosted deployments without Vercel KV
   const explicitlyDisabled = process.env.RATE_LIMIT_DISABLED === "1" ||
@@ -54,25 +53,19 @@ export async function checkRateLimit(
     return { ok: true, remaining: UNLIMITED, resetAt: 0, limit: UNLIMITED };
   }
 
-  // If Vercel KV is not configured:
-  // - In production, FAIL CLOSED (deny) to prevent abuse of expensive endpoints
-  // - In development, allow (no KV needed for local dev)
+  // If Vercel KV is not configured, ALLOW requests (graceful degradation).
+  // Rate limiting is a nice-to-have, not a blocker for the core functionality.
+  // Previously this was fail-closed in production, which blocked ALL /api/analyze
+  // calls when KV wasn't set up — making the app completely unusable.
   if (!kvConfigured) {
-    if (isProduction) {
-      console.error("Rate limiter KV not configured in production — denying request. Set KV_REST_API_URL and KV_REST_API_TOKEN, or RATE_LIMIT_DISABLED=1 to bypass.");
-      return { ok: false, remaining: 0, resetAt: Date.now() + windowMs, limit };
-    }
     return { ok: true, remaining: UNLIMITED, resetAt: 0, limit: UNLIMITED };
   }
 
   try {
     return await checkRateLimitWithKv(key, limit, windowMs);
   } catch (error) {
-    console.error("Rate limiter error:", error);
-    // In production, fail closed on KV errors; in dev, allow
-    if (isProduction) {
-      return { ok: false, remaining: 0, resetAt: Date.now() + windowMs, limit };
-    }
+    // On KV errors, allow the request rather than blocking users
+    console.error("Rate limiter error (allowing request):", error);
     return { ok: true, remaining: UNLIMITED, resetAt: 0, limit: UNLIMITED };
   }
 }

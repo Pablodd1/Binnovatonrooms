@@ -1148,6 +1148,39 @@ export default function Home() {
             {/* Shutter flash animation */}
             {shutterFlash && <div className="shutter-flash" aria-hidden="true" />}
 
+            {/* Floating camera controls (top-right of viewer) */}
+            {isCameraActive && (
+              <div className="viewer-controls">
+                <button
+                  type="button"
+                  className={clsx("viewer-ctrl-btn", torchOn && "active")}
+                  onClick={toggleTorch}
+                  title="Linterna"
+                  aria-label="Linterna"
+                >
+                  <Flashlight size={20} />
+                </button>
+                <button
+                  type="button"
+                  className="viewer-ctrl-btn"
+                  onClick={toggleCameraFacing}
+                  title="Cambiar cámara"
+                  aria-label="Cambiar cámara"
+                >
+                  <FlipHorizontal2 size={20} />
+                </button>
+                <button
+                  type="button"
+                  className={clsx("viewer-ctrl-btn", showFramingGrid && "active")}
+                  onClick={() => setShowFramingGrid(!showFramingGrid)}
+                  title="Cuadrícula"
+                  aria-label="Cuadrícula"
+                >
+                  <Grid3x3 size={20} />
+                </button>
+              </div>
+            )}
+
             {/* Shutter button — large, on the viewer */}
             <div className="shutter-area">
               <button

@@ -3,7 +3,6 @@ import { checkRateLimit, getClientIp } from "@/lib/rate-limiter";
 
 describe("checkRateLimit", () => {
   const originalEnv = { ...process.env };
-  const originalNodeEnv = process.env.NODE_ENV;
 
   afterEach(() => {
     process.env = { ...originalEnv };
@@ -13,6 +12,7 @@ describe("checkRateLimit", () => {
     beforeEach(() => {
       delete process.env.KV_REST_API_URL;
       delete process.env.KV_REST_API_TOKEN;
+      delete process.env.RATE_LIMIT_DISABLED;
     });
 
     it("allows requests in development", async () => {
@@ -22,11 +22,29 @@ describe("checkRateLimit", () => {
       expect(result.remaining).toBeGreaterThan(0);
     });
 
-    it("FAILS CLOSED in production (denies request)", async () => {
+    it("allows requests in production (graceful degradation)", async () => {
       process.env.NODE_ENV = "production";
       const result = await checkRateLimit("test-key", 5, 60000);
-      expect(result.ok).toBe(false);
-      expect(result.remaining).toBe(0);
+      expect(result.ok).toBe(true);
+      expect(result.remaining).toBeGreaterThan(0);
+    });
+  });
+
+  describe("with RATE_LIMIT_DISABLED", () => {
+    beforeEach(() => {
+      process.env.NODE_ENV = "production";
+    });
+
+    it("allows all requests when RATE_LIMIT_DISABLED=1", async () => {
+      process.env.RATE_LIMIT_DISABLED = "1";
+      const result = await checkRateLimit("test-key", 5, 60000);
+      expect(result.ok).toBe(true);
+    });
+
+    it("allows all requests when RATE_LIMIT_DISABLED=true", async () => {
+      process.env.RATE_LIMIT_DISABLED = "true";
+      const result = await checkRateLimit("test-key", 5, 60000);
+      expect(result.ok).toBe(true);
     });
   });
 });

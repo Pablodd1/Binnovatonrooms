@@ -1856,6 +1856,12 @@ ol {
     display: none;
   }
 
+  /* On mobile, hide the duplicate camera control buttons from the toolbar
+     (they're now floating on the viewer). Keep only source selector + Activar. */
+  .camera-toolbar > button:not(:nth-of-type(1)) {
+    display: none;
+  }
+
   .camera-toolbar button,
   .camera-toolbar label {
     flex-shrink: 0;
@@ -2240,6 +2246,43 @@ ol {
   background: #fff;
   animation: flash-fade 0.25s ease-out forwards;
   pointer-events: none;
+}
+
+/* Floating camera controls on viewer */
+.viewer-controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.viewer-ctrl-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  background: rgba(16, 24, 32, 0.7);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.viewer-ctrl-btn:hover {
+  background: rgba(16, 24, 32, 0.9);
+}
+
+.viewer-ctrl-btn.active {
+  background: var(--green);
+  color: #062114;
+  border-color: var(--green);
 }
 
 @keyframes flash-fade {
