@@ -683,13 +683,15 @@ export default function Home() {
 
   const toggleCameraFacing = useCallback(() => {
     setFacingMode((prev) => prev === "environment" ? "user" : "environment");
-    // Restart camera with new facing mode after a tick
+    setSelectedDeviceId("");
+    // Stop current stream, then restart with the new facing mode on next tick
+    // (state update needs to flush before startCamera reads the new facingMode)
+    stopStream();
+    setIsCameraActive(false);
     setTimeout(() => {
-      stopStream();
-      setSelectedDeviceId("");
-      setIsCameraActive(false);
-    }, 0);
-  }, [stopStream]);
+      startCamera();
+    }, 100);
+  }, [startCamera, stopStream]);
 
   const captureFrame = useCallback(async (saveCapture = true) => {
     const video = videoRef.current;

@@ -356,6 +356,7 @@ export async function POST(request: Request) {
   const requestId = generateRequestId();
   const log = createRequestLogger(requestId, request);
 
+  try {
   // Auth optional — record user if logged in, but allow anonymous use
   const session = await auth().catch(() => null);
   const userId = session?.user?.id;
@@ -651,4 +652,11 @@ export async function POST(request: Request) {
         }
       : null,
   });
+  } catch (error) {
+    log.error({ error: error instanceof Error ? error.message : "Unknown" }, "Analyze request failed unexpectedly");
+    return NextResponse.json(
+      { error: "No se pudo completar el analisis. Intente de nuevo." },
+      { status: 500 }
+    );
+  }
 }
