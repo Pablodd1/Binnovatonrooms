@@ -36,12 +36,27 @@ create table if not exists public.reportes (
   lat double precision check (lat is null or (lat >= -90 and lat <= 90)),
   lng double precision check (lng is null or (lng >= -180 and lng <= 180)),
   quality jsonb,
+  user_id uuid,
+  risk_score integer generated always as (
+    case severidad
+      when 'critica' then 100
+      when 'alta' then 78
+      when 'media' then 46
+      else 18
+    end
+  ) stored,
   status text not null default 'nuevo' check (status in ('nuevo', 'revision', 'asignar', 'cerrado')),
   closed_reason text,
   closed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.reportes
+  drop constraint if exists reportes_diagnostico_is_object;
+alter table public.reportes
+  add constraint reportes_diagnostico_is_object
+  check (jsonb_typeof(diagnostico) = 'object');
 
 create table if not exists public.report_images (
   id uuid primary key default gen_random_uuid(),
@@ -50,7 +65,7 @@ create table if not exists public.report_images (
   image_url text,
   mime_type text,
   size_bytes integer check (size_bytes is null or size_bytes >= 0),
-  quality jsonb,
+  quality jsonb default '{}',
   created_at timestamptz not null default now()
 );
 
@@ -83,6 +98,10 @@ create index if not exists reportes_severidad_created_idx on public.reportes (se
 create index if not exists reportes_tipo_created_idx on public.reportes (tipo_defecto, created_at desc);
 create index if not exists reportes_diagnostico_gin_idx on public.reportes using gin (diagnostico jsonb_path_ops);
 create index if not exists report_images_report_order_idx on public.report_images (report_id, sort_order);
+create index if not exists reportes_user_id_idx on public.reportes (user_id);
+create index if not exists reportes_risk_score_idx on public.reportes (risk_score desc);
+create index if not exists reportes_status_workflow_idx on public.reportes (status, created_at desc);
+create index if not exists reportes_lat_lng_idx on public.reportes (lat, lng);
 
 create or replace function public.distance_km(
   lat1 double precision,
@@ -246,11 +265,21 @@ on public.reportes for all
 using ((select auth.role()) = 'service_role')
 with check ((select auth.role()) = 'service_role');
 
+drop policy if exists "Users can read own reports" on public.reportes;
+create policy "Users can read own reports"
+on public.reportes for select
+using (user_id = auth.uid() or (select auth.role()) = 'service_role');
+
 drop policy if exists "Service role manages report images" on public.report_images;
 create policy "Service role manages report images"
 on public.report_images for all
 using ((select auth.role()) = 'service_role')
 with check ((select auth.role()) = 'service_role');
+
+drop policy if exists "Authenticated users can read signed inspection images" on storage.objects;
+create policy "Authenticated users can read signed inspection images"
+on storage.objects for select
+using (bucket_id = 'inspection-images' and auth.role() = 'authenticated');
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
