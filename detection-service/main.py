@@ -237,12 +237,24 @@ def run_sahi_inference(image: Image.Image, confidence: float = 0.25) -> list[Det
         from sahi import AutoDetectionModel
         from sahi.predict import get_sliced_prediction
 
-        sahi_model = AutoDetectionModel.from_pretrained(
-            model_type="ultralytics",
-            model_path=YOLO_MODEL_PATH,
-            confidence_threshold=confidence,
-            device=DEVICE,
-        )
+        # SAHI model_type: older versions use "yolov8", newer use "ultralytics".
+        # Try both to be version-tolerant.
+        sahi_model = None
+        for model_type in ("yolov8", "ultralytics"):
+            try:
+                sahi_model = AutoDetectionModel.from_pretrained(
+                    model_type=model_type,
+                    model_path=YOLO_MODEL_PATH,
+                    confidence_threshold=confidence,
+                    device=DEVICE,
+                )
+                break
+            except (KeyError, ValueError):
+                continue
+
+        if sahi_model is None:
+            logger.warning("SAHI could not load model with any known model_type, falling back to standard YOLO")
+            return run_yolo_inference(image, confidence)
 
         img_array = np.array(image)
         if img_array.shape[2] == 4:
@@ -280,8 +292,10 @@ def run_sahi_inference(image: Image.Image, confidence: float = 0.25) -> list[Det
         logger.info(f"SAHI inference: {len(detections)} detections")
         return detections
 
-    except ImportError:
-        logger.warning("SAHI not available, falling back to standard YOLO")
+    except Exception as e:
+        # Catch ALL exceptions (not just ImportError) so we always fall back to
+        # standard YOLO. Previously KeyError crashed the request.
+        logger.warning(f"SAHI failed ({type(e).__name__}: {e}), falling back to standard YOLO")
         return run_yolo_inference(image, confidence)
 
 
