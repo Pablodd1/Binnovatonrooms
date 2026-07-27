@@ -7,6 +7,9 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const supabase = getSupabaseAdmin();
 
+  // Also check detection service env var
+  const detectionUrl = process.env.DETECTION_SERVICE_URL || "http://localhost:8000 (DEFAULT - NOT SET!)";
+
   if (!supabase) {
     return NextResponse.json({
       configured: false,
@@ -87,5 +90,7 @@ export async function GET() {
     insertTestResult: insertTest === "SUCCESS"
       ? "Database accepts writes — the analyze route should be able to save reports"
       : "Database rejects writes — this is why reports aren't saving",
+    detectionServiceUrl: detectionUrl,
+    detectionServiceConfigured: Boolean(process.env.DETECTION_SERVICE_URL),
   });
 }
