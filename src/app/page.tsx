@@ -8,7 +8,6 @@ import ShotProgress from "@/components/ShotProgress";
 import type { HeatmapData } from "@/lib/analytics";
 import {
   AlertTriangle,
-  Activity,
   BarChart3,
   Camera,
   CheckCircle2,
@@ -167,7 +166,7 @@ function exportDiagnosis(analysis: AnalysisResponse | null, quality: QualityScor
   URL.revokeObjectURL(url);
 }
 
-async function downloadReportPdf(reportId: string) {
+async function downloadReportPdf(reportId: string, onError?: (message: string) => void) {
   try {
     const res = await fetch(`/api/reports/${reportId}/pdf`);
     if (!res.ok) throw new Error("PDF generation failed");
@@ -175,11 +174,13 @@ async function downloadReportPdf(reportId: string) {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
+    // The endpoint returns printable HTML (browser print-to-PDF), keep .html
     anchor.download = `buildscan-report-${reportId}.html`;
     anchor.click();
     URL.revokeObjectURL(url);
   } catch (err) {
     console.error("PDF download failed:", err);
+    onError?.("No se pudo descargar el reporte. Intente de nuevo.");
   }
 }
 
@@ -511,6 +512,7 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [shutterFlash, setShutterFlash] = useState(false);
   const resultsRef = useRef<HTMLElement>(null);
+  const cameraRestartRef = useRef(false);
 
   const severe = analysis?.diagnosis.severidad === "alta" || analysis?.diagnosis.severidad === "critica";
   const evidenceMarkers = markerFallback(analysis);
@@ -556,18 +558,22 @@ export default function Home() {
   }, []);
 
   const removeCapture = useCallback((id: string) => {
-    setCaptures((current) => {
-      const target = current.find((capture) => capture.id === id);
-      if (target) {
-        URL.revokeObjectURL(target.url);
-        captureUrlsRef.current.delete(target.url);
-      }
-      const next = current.filter((capture) => capture.id !== id);
-      setSelectedCaptureId((selected) => (selected === id ? next[next.length - 1]?.id || "" : selected));
-      if (target && quality === target.quality) setQuality(next[next.length - 1]?.quality || defaultQuality);
-      return next;
-    });
-  }, [quality]);
+    // Compute everything outside the updater — setState updaters must be pure
+    // (React StrictMode runs them twice; side effects there fire twice).
+    const target = captures.find((capture) => capture.id === id);
+    if (target) {
+      URL.revokeObjectURL(target.url);
+      captureUrlsRef.current.delete(target.url);
+    }
+    const next = captures.filter((capture) => capture.id !== id);
+    setCaptures(next);
+    setSelectedCaptureId((selected) => (selected === id ? next[next.length - 1]?.id || "" : selected));
+    // Restore the previous capture's quality when removing the selected one
+    const fallback = next[next.length - 1];
+    if (target && selectedCaptureId === id) {
+      setQuality(fallback?.quality || defaultQuality);
+    }
+  }, [captures, selectedCaptureId]);
 
   const clearCaptures = useCallback(() => {
     captureUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
@@ -591,17 +597,24 @@ export default function Home() {
   }, [selectedDeviceId]);
 
   const loadOperationalData = useCallback(async () => {
-    const [analyticsResponse, reportsResponse, heatmapResponse] = await Promise.all([
-      fetch("/api/analytics"),
-      fetch("/api/reports"),
-      fetch("/api/analytics/heatmap")
-    ]);
-    const nextAnalytics = (await analyticsResponse.json()) as InspectionAnalytics;
-    const reportsPayload = (await reportsResponse.json()) as { reports: ReportSummary[] };
-    const heatmapData = (await heatmapResponse.json()) as HeatmapData;
-    setAnalytics(nextAnalytics);
-    setReports(reportsPayload.reports || []);
-    setHeatmap(heatmapData);
+    try {
+      const [analyticsResponse, reportsResponse, heatmapResponse] = await Promise.all([
+        fetch("/api/analytics"),
+        fetch("/api/reports"),
+        fetch("/api/analytics/heatmap")
+      ]);
+      if (!analyticsResponse.ok || !reportsResponse.ok || !heatmapResponse.ok) {
+        throw new Error("No se pudieron cargar los datos operativos.");
+      }
+      const nextAnalytics = (await analyticsResponse.json()) as InspectionAnalytics;
+      const reportsPayload = (await reportsResponse.json()) as { reports: ReportSummary[] };
+      const heatmapData = (await heatmapResponse.json()) as HeatmapData;
+      setAnalytics(nextAnalytics);
+      setReports(reportsPayload.reports || []);
+      setHeatmap(heatmapData);
+    } catch {
+      setError("No se pudieron cargar analiticas y reportes. Verifique la conexion y refresque.");
+    }
   }, []);
 
   const handleCompareToggle = useCallback(async () => {
@@ -684,14 +697,18 @@ export default function Home() {
   const toggleCameraFacing = useCallback(() => {
     setFacingMode((prev) => prev === "environment" ? "user" : "environment");
     setSelectedDeviceId("");
-    // Stop current stream, then restart with the new facing mode on next tick
-    // (state update needs to flush before startCamera reads the new facingMode)
+    // Mark a pending restart; the effect on [facingMode] picks it up after the
+    // state flush, so startCamera() reads the NEW facingMode (no stale closure).
+    cameraRestartRef.current = true;
     stopStream();
-    setIsCameraActive(false);
-    setTimeout(() => {
-      startCamera();
-    }, 100);
-  }, [startCamera, stopStream]);
+  }, [stopStream]);
+
+  // Restart the camera after a facing flip, once facingMode has actually updated
+  useEffect(() => {
+    if (!cameraRestartRef.current) return;
+    cameraRestartRef.current = false;
+    startCamera();
+  }, [facingMode, startCamera]);
 
   const captureFrame = useCallback(async (saveCapture = true) => {
     const video = videoRef.current;
@@ -844,7 +861,12 @@ export default function Home() {
       captureUrls.forEach((url) => URL.revokeObjectURL(url));
       captureUrls.clear();
     };
-  }, [loadOperationalData, refreshDevices, stopStream]);
+    // Mount-only: cleanup must not re-run when refreshDevices identity changes
+    // (it depends on selectedDeviceId), or changing the camera dropdown would
+    // kill the live stream. All callbacks used here are either stable
+    // (stopStream, loadOperationalData) or only their mount-time call matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!navigator.mediaDevices?.addEventListener) return;
@@ -1283,7 +1305,7 @@ export default function Home() {
                 <Download size={18} />
                 Exportar JSON
               </button>
-              <button type="button" onClick={() => analysis?.reportId && downloadReportPdf(analysis.reportId)} disabled={!analysis?.reportId}>
+              <button type="button" onClick={() => { if (analysis?.reportId) downloadReportPdf(analysis.reportId, setError); }} disabled={!analysis?.reportId}>
                 <FileText size={18} />
                 Descargar Reporte
               </button>
@@ -1300,7 +1322,7 @@ export default function Home() {
                   <button type="button" onClick={() => { exportDiagnosis(analysis, quality, captures); setShowOverflow(false); }} disabled={!analysis}>
                     <Download size={16} /> Exportar JSON
                   </button>
-                  <button type="button" onClick={() => { analysis?.reportId && downloadReportPdf(analysis.reportId); setShowOverflow(false); }} disabled={!analysis?.reportId}>
+                  <button type="button" onClick={() => { if (analysis?.reportId) downloadReportPdf(analysis.reportId, setError); setShowOverflow(false); }} disabled={!analysis?.reportId}>
                     <FileText size={16} /> Descargar Reporte
                   </button>
                   <button type="button" onClick={() => { clearCaptures(); setShowOverflow(false); }} disabled={captures.length === 0}>
@@ -1446,13 +1468,6 @@ export default function Home() {
         </aside>
       </section>
 
-      {error ? (
-        <section className="error-box">
-          <AlertTriangle size={18} />
-          {error}
-        </section>
-      ) : null}
-
       {analysis ? (
         <section className="results" ref={resultsRef}>
           <div className="diagnosis">
@@ -1584,6 +1599,14 @@ export default function Home() {
 
         </div>
       )}
+
+      {/* Error banner — outside tab conditionals so it shows on every tab */}
+      {error ? (
+        <section className="error-box">
+          <AlertTriangle size={18} />
+          {error}
+        </section>
+      ) : null}
     </main>
   );
 }

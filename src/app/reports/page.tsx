@@ -28,6 +28,7 @@ export default function ReportsPage() {
   const [sortBy, setSortBy] = useState<"date" | "severity" | "risk">("date");
   const [transitioningId, setTransitioningId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
+  const [loadError, setLoadError] = useState(false);
 
   // Update clock every 60s for "time ago" display
   useEffect(() => {
@@ -49,10 +50,13 @@ export default function ReportsPage() {
       if (filterStatus !== "all") params.set("status", filterStatus);
       if (filterSeverity !== "all") params.set("severity", filterSeverity);
       const res = await fetch(`/api/reports?${params}`);
+      if (!res.ok) throw new Error("Request failed");
       const data = await res.json();
       setReports(data.reports || []);
+      setLoadError(false);
     } catch {
       setReports([]);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -165,6 +169,13 @@ export default function ReportsPage() {
       {/* Report Cards */}
       {loading ? (
         <div className="reports-loading">Cargando reportes...</div>
+      ) : loadError ? (
+        <div className="reports-empty">
+          <p>No se pudieron cargar los reportes. Verifique la conexion e intente de nuevo.</p>
+          <button type="button" className="primary" onClick={() => loadReports()}>
+            Reintentar
+          </button>
+        </div>
       ) : sorted.length === 0 ? (
         <div className="reports-empty">
           <p>No se encontraron reportes con los filtros seleccionados.</p>

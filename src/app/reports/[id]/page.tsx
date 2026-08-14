@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import type { InspectionDiagnosis, InstallerMatch } from "@/lib/analysis-schema";
 import type { ReportStatus } from "@/lib/reports";
-import { STATUS_LABELS, VALID_TRANSITIONS, isValidTransition } from "@/lib/reports";
+import { STATUS_LABELS, VALID_TRANSITIONS } from "@/lib/reports";
 
 type ReportImage = {
   id: string;
@@ -89,7 +89,9 @@ export default function ReportDetailPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `buildscan-report-${id}.pdf`;
+      // Endpoint returns printable HTML (user prints to PDF in the browser);
+      // keep .html so the file opens correctly
+      a.download = `buildscan-report-${id}.html`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {

@@ -26,28 +26,6 @@ export function getSupabaseAdmin(): SupabaseClient | null {
   return cachedAdminClient;
 }
 
-let cachedAnonClient: SupabaseClient | null = null;
-
-export function getSupabaseAnonClient(): SupabaseClient | null {
-  if (cachedAnonClient) return cachedAnonClient;
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!url || !anonKey) {
-    return null;
-  }
-
-  cachedAnonClient = createClient(url, anonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-    },
-  });
-
-  return cachedAnonClient;
-}
-
 export function getStorageBucket(): string {
   return process.env.SUPABASE_BUCKET || "inspection-images";
 }

@@ -1,5 +1,5 @@
 import { checkRateLimit as kvCheckRateLimit, getClientIp as kvGetClientIp } from "./rate-limiter";
-import { validateRequest, analyzeRequestSchema, installersMatchRequestSchema } from "./validation";
+import { validateRequest, installersMatchRequestSchema } from "./validation";
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_TOTAL_IMAGE_BYTES = 30 * 1024 * 1024;
@@ -58,18 +58,6 @@ export function isUploadedImage(entry: FormDataEntryValue | null): entry is File
     typeof candidate.size === "number" &&
     typeof candidate.type === "string"
   );
-}
-
-export function validateAnalyzeFormData(formData: FormData) {
-  const data = {
-    cameraLabel: formData.get("cameraLabel"),
-    locationLabel: formData.get("locationLabel"),
-    lidarNotes: formData.get("lidarNotes"),
-    qualityNotes: formData.get("qualityNotes"),
-    lat: formData.get("lat"),
-    lng: formData.get("lng"),
-  };
-  return validateRequest(analyzeRequestSchema, data);
 }
 
 export function validateInstallersMatchBody(body: unknown) {
