@@ -25,9 +25,14 @@ detection-service/models/*.onnx
 test-results/
 playwright-report/
 
-# Unrelated projects
+# Unrelated projects (must never be committed or shipped in Docker context)
 Real-state/
 Building-Innovation-AI/
+.pgscratch/
+Jasmethod/
+John-wellness-/
+Key-inventory/
+real-estate-dates-WEBSITE2/
 
 # ZCode internal
 .zcode/

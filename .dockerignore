@@ -1,0 +1,29 @@
+node_modules
+.next
+out
+dist
+coverage
+.vercel
+.git
+.env
+.env*.local
+*.log
+*.tsbuildinfo
+test-results
+playwright-report
+
+# Unrelated projects living in this workspace — never ship them
+Real-state
+Building-Innovation-AI
+.pgscratch
+Jasmethod
+John-wellness-
+Key-inventory
+real-estate-dates-WEBSITE2
+
+# Python service builds its own image (see detection-service/.dockerignore)
+detection-service
+
+# Supabase local state
+supabase/.branches
+supabase/.temp

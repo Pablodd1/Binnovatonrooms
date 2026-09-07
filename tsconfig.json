@@ -32,8 +32,10 @@
   },
   "include": [
     "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "__tests__/**/*.ts",
+    "e2e/**/*.ts",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
@@ -41,6 +43,11 @@
     "node_modules",
     "Real-state",
     "detection-service",
-    "Building-Innovation-AI"
+    "Building-Innovation-AI",
+    ".pgscratch",
+    "Jasmethod",
+    "John-wellness-",
+    "Key-inventory",
+    "real-estate-dates-WEBSITE2"
   ]
 }
