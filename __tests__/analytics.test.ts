@@ -58,6 +58,7 @@ describe("normalizeReports", () => {
     especialista_requerido: "estructurista",
     location_label: "Sala - columna",
     image_url: null,
+    status: null, closed_reason: null, closed_at: null,
     diagnostico: { confianza: 0.91, urgencia_dias: 0, requiere_revision_humana: true },
   };
 

@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import EvidenceImage from "@/components/EvidenceImage";
+import { markersForImage, diagnosisTitle } from "@/lib/evidence";
 import type { InspectionDiagnosis, InstallerMatch } from "@/lib/analysis-schema";
 import type { ReportStatus } from "@/lib/reports";
 import { STATUS_LABELS, VALID_TRANSITIONS } from "@/lib/reports";
@@ -149,6 +151,7 @@ export default function ReportDetailPage() {
   if (!report) return null;
 
   const diag = report.diagnostico;
+  const reportImages = [...(report.report_images || [])].sort((a, b) => a.sort_order - b.sort_order);
   const currentStatus = report.status as ReportStatus;
   const isClosed = currentStatus === "cerrado";
   const allowedTransitions = VALID_TRANSITIONS[currentStatus] || [];
@@ -180,7 +183,7 @@ export default function ReportDetailPage() {
           <span className={`severity ${severityClass(report.severidad)}`}>
             {SEVERITY_LABELS[report.severidad] || report.severidad}
           </span>
-          <span>{report.tipo_defecto}</span>
+          <span>{diag ? diagnosisTitle(diag) : report.tipo_defecto}</span>
           <span className="muted-text">{formatDate(report.created_at)}</span>
         </div>
         {report.location_label && <h2>{report.location_label}</h2>}
@@ -196,24 +199,11 @@ export default function ReportDetailPage() {
         <div className="report-detail-section">
           <h3>Imagenes de Evidencia</h3>
           <div className="report-detail-images">
-            {report.report_images?.map((img, i) => (
+            {reportImages.map((img, i) => (
               <div key={img.id} className="report-image-container">
                 {img.image_url ? (
-                  <>
-                    <img src={img.image_url} alt={`Imagen ${i + 1}`} />
-                    {diag?.visual_indicators?.filter((_, idx) => idx < (i === 0 ? 8 : 0)).map((m, mi) => (
-                      <div
-                        key={mi}
-                        className="evidence-marker"
-                        style={{
-                          left: `${m.x}%`, top: `${m.y}%`,
-                          width: `${m.width}%`, height: `${m.height}%`,
-                        }}
-                      >
-                        <span className="marker-label">{m.label}</span>
-                      </div>
-                    ))}
-                  </>
+                  <EvidenceImage src={img.image_url} alt={`Imagen ${i + 1}`}
+                    markers={markersForImage(diag, img.sort_order, reportImages.length)} />
                 ) : (
                   <div className="report-image-placeholder">Sin imagen</div>
                 )}

@@ -86,7 +86,7 @@ NEXT_PUBLIC_SITE_NAME=BuildScan AI
 Notes:
 
 - `GEMINI_API_KEY` is required for `/api/analyze`.
-- `GEMINI_MODEL` is configurable. Default is `gemini-3.5-flash`; use a stronger Gemini Pro model if your account has access and latency/cost fit the workflow.
+- `GEMINI_MODEL` is configurable. Default is `gemini-3.6-flash`; use a stronger Gemini Pro model if your account has access and latency/cost fit the workflow.
 - Supabase variables are required for persistence, image storage, analytics from real reports, and installer matching.
 - Without Supabase variables, `/api/analytics` and `/api/reports` return demo data so the UI remains usable.
 - `NEXT_PUBLIC_SITE_NAME` is optional and useful if the app is later white-labeled.
@@ -135,7 +135,7 @@ Before exposing the app to real users:
 - Replace demo installers with real verified installers.
 - Confirm the `inspection-images` storage policy fits the business model. Public URLs are convenient for MVP demos; signed URLs are better for private customer data.
 - Test `/api/health`; `ok` should be `true` when Gemini is configured.
-- Test `/api/analyze` with JPEG, PNG, and WebP images under 10MB.
+- Test `/api/analyze` with JPEG, PNG, and WebP images within the 4 MB total inspection upload budget.
 - Confirm Vercel Function logs do not show Gemini, Supabase, or storage failures.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` server-only. Never expose it in client code.
 - Add auth before storing customer-identifiable production reports.
@@ -254,7 +254,7 @@ Production expectation: `ok` is `true` only when Gemini is configured. Supabase 
 
 Receives multipart form data:
 
-- `image`: required primary JPEG, PNG, or WebP image under 10MB.
+- `image`: required primary JPEG, PNG, or WebP image within the 4 MB total inspection upload budget.
 - `images`: optional additional JPEG, PNG, or WebP images.
 - `cameraLabel`: camera/device label.
 - `locationLabel`: room/area text.
@@ -275,7 +275,7 @@ Protections:
 
 - Rate limited.
 - Rejects unsupported image types.
-- Allows up to 6 images and 30MB total per inspection set.
+- Allows up to 6 images and 4 MB total per inspection set.
 - Sanitizes text fields.
 - Bounds GPS coordinates.
 - Sends inline image parts to Gemini and requests JSON output.

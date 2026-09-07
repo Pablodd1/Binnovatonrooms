@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limiter";
 
 describe("checkRateLimit", () => {
   const originalEnv = { ...process.env };
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     process.env = { ...originalEnv };
   });
 
@@ -16,14 +17,14 @@ describe("checkRateLimit", () => {
     });
 
     it("allows requests in development", async () => {
-      process.env.NODE_ENV = "development";
+      vi.stubEnv("NODE_ENV", "development");
       const result = await checkRateLimit("test-key", 5, 60000);
       expect(result.ok).toBe(true);
       expect(result.remaining).toBeGreaterThan(0);
     });
 
     it("allows requests in production (graceful degradation)", async () => {
-      process.env.NODE_ENV = "production";
+      vi.stubEnv("NODE_ENV", "production");
       const result = await checkRateLimit("test-key", 5, 60000);
       expect(result.ok).toBe(true);
       expect(result.remaining).toBeGreaterThan(0);
@@ -32,7 +33,7 @@ describe("checkRateLimit", () => {
 
   describe("with RATE_LIMIT_DISABLED", () => {
     beforeEach(() => {
-      process.env.NODE_ENV = "production";
+      vi.stubEnv("NODE_ENV", "production");
     });
 
     it("allows all requests when RATE_LIMIT_DISABLED=1", async () => {

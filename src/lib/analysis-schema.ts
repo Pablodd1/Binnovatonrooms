@@ -15,6 +15,7 @@ export type Severity = (typeof severities)[number];
 export type DetailLevel = "standard" | "detailed" | "forensic";
 
 export type InspectionDiagnosis = {
+  outcome?: "defect_detected" | "no_visible_defect" | "insufficient_evidence";
   tipo_defecto: DefectType;
   severidad: Severity;
   ubicacion: string;
@@ -27,6 +28,7 @@ export type InspectionDiagnosis = {
   confianza: number;
   evidencia_visual: string[];
   visual_indicators: Array<{
+    image_index?: number; // 1-based; absent only in legacy reports
     label: string;
     confidence: number;
     x: number;
@@ -41,6 +43,8 @@ export type InspectionDiagnosis = {
     analysis_pass: number;
     processing_time_ms?: number;
     total_defects_found?: number;
+    review_completed?: boolean;
+    warnings?: string[];
     micro_defects_detected?: string[];
     surface_conditions?: string[];
     environmental_factors?: string[];
@@ -64,6 +68,7 @@ export const inspectionJsonSchema = {
   type: "object",
   additionalProperties: false,
   required: [
+    "outcome",
     "tipo_defecto",
     "severidad",
     "ubicacion",
@@ -79,13 +84,14 @@ export const inspectionJsonSchema = {
     "requiere_revision_humana"
   ],
   properties: {
+    outcome: { type: "string", enum: ["defect_detected", "no_visible_defect", "insufficient_evidence"] },
     tipo_defecto: { type: "string", enum: defectTypes },
     severidad: { type: "string", enum: severities },
     ubicacion: { type: "string" },
     causa_probable: { type: "string" },
     solucion_paso_a_paso: {
       type: "array",
-      minItems: 3,
+      minItems: 0,
       maxItems: 8,
       items: { type: "string" }
     },
@@ -93,32 +99,33 @@ export const inspectionJsonSchema = {
     especialista_requerido: { type: "string" },
     mediciones_recomendadas: {
       type: "array",
-      minItems: 1,
+      minItems: 0,
       maxItems: 6,
       items: { type: "string" }
     },
     riesgos: {
       type: "array",
-      minItems: 1,
+      minItems: 0,
       maxItems: 6,
       items: { type: "string" }
     },
     confianza: { type: "number", minimum: 0, maximum: 1 },
     evidencia_visual: {
       type: "array",
-      minItems: 1,
+      minItems: 0,
       maxItems: 12,
       items: { type: "string" }
     },
     visual_indicators: {
       type: "array",
-      minItems: 1,
+      minItems: 0,
       maxItems: 8,
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["label", "confidence", "x", "y", "width", "height"],
+        required: ["image_index", "label", "confidence", "x", "y", "width", "height"],
         properties: {
+          image_index: { type: "integer", minimum: 1, maximum: 6 },
           label: { type: "string" },
           confidence: { type: "number", minimum: 0, maximum: 1 },
           x: { type: "number", minimum: 0, maximum: 100 },

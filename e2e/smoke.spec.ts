@@ -19,7 +19,7 @@ test.describe("BuildScan AI - Smoke Tests", () => {
 
   test("homepage shows KPI dashboard", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("text=Reportes")).toBeVisible();
+    await page.getByRole("tab", { name: "Analítica", exact: true }).click();
     await expect(page.locator("text=Confianza media")).toBeVisible();
     await expect(page.locator("text=Revision humana")).toBeVisible();
     await expect(page.locator("text=Urgencia media")).toBeVisible();
@@ -45,12 +45,13 @@ test.describe("BuildScan AI - Smoke Tests", () => {
 
   test("homepage shows camera device selector", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("select")).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Camara" })).toBeVisible();
   });
 
   test("homepage shows analytics panels", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("text=Distribución de defectos")).toBeVisible();
+    await page.getByRole("tab", { name: "Analítica", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Distribucion de defectos" })).toBeVisible();
     await expect(page.locator("text=Tendencia semanal")).toBeVisible();
     await expect(page.locator("text=Pistas operativas")).toBeVisible();
   });

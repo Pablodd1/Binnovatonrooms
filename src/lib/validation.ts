@@ -11,6 +11,7 @@ export const analyzeRequestSchema = z.object({
 });
 
 export const diagnosisSchema = z.object({
+  outcome: z.enum(["defect_detected", "no_visible_defect", "insufficient_evidence"]).optional(),
   tipo_defecto: z.enum(defectTypes),
   severidad: z.enum(severities),
   ubicacion: z.string(),
@@ -24,14 +25,16 @@ export const diagnosisSchema = z.object({
   evidencia_visual: z.array(z.string()),
   visual_indicators: z.array(
     z.object({
-      label: z.string(),
+      image_index: z.number().int().min(1).max(6).optional(),
+      label: z.string().max(160),
       confidence: z.number().min(0).max(1),
       x: z.number().min(0).max(100),
       y: z.number().min(0).max(100),
       width: z.number().min(1).max(100),
       height: z.number().min(1).max(100),
-    })
-  ),
+    }).refine(box => box.x + box.width <= 100.01 && box.y + box.height <= 100.01,
+      "Evidence box extends outside the image")
+  ).max(8),
   requiere_revision_humana: z.boolean(),
 });
 

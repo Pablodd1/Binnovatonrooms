@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import EvidenceImage from "@/components/EvidenceImage";
+import { markersForImage, diagnosisTitle } from "@/lib/evidence";
+import { validateImageSet } from "@/lib/image-limits";
 import DefectHeatmap from "@/components/DefectHeatmap";
 import CaptureCoach from "@/components/CaptureCoach";
 import ShotProgress from "@/components/ShotProgress";
@@ -33,7 +36,7 @@ import {
   X
 } from "lucide-react";
 import clsx from "clsx";
-import type { InspectionDiagnosis, InstallerMatch } from "@/lib/analysis-schema";
+import type { InspectionDiagnosis, InstallerMatch, DetailLevel } from "@/lib/analysis-schema";
 import type { InspectionAnalytics } from "@/lib/analytics";
 import type { ReportSummary } from "@/lib/reports";
 
@@ -79,9 +82,10 @@ type AnalysisResponse = {
   installers: InstallerMatch[];
   imageUrl: string | null;
   model: string;
+  warnings?: string[];
+  saved?: boolean;
 };
 
-type EvidenceMarker = InspectionDiagnosis["visual_indicators"][number];
 
 const MAX_INSPECTION_IMAGES = 6;
 const INSPECTION_SHOTS = [
@@ -126,19 +130,6 @@ function severityScore(severity?: InspectionDiagnosis["severidad"]) {
   if (severity === "media") return 46;
   if (severity === "baja") return 18;
   return 0;
-}
-
-function markerFallback(analysis: AnalysisResponse | null): EvidenceMarker[] {
-  if (!analysis) return [];
-  if (analysis.diagnosis.visual_indicators.length > 0) return analysis.diagnosis.visual_indicators;
-  return analysis.diagnosis.evidencia_visual.slice(0, 3).map((label, index) => ({
-    label,
-    confidence: analysis.diagnosis.confianza,
-    x: 18 + index * 18,
-    y: 24 + index * 12,
-    width: 30,
-    height: 22
-  }));
 }
 
 function exportDiagnosis(analysis: AnalysisResponse | null, quality: QualityScore, captures: CaptureItem[]) {
@@ -213,12 +204,12 @@ function checkStatus(ok: boolean, warn: boolean): CaptureCheck["status"] {
   return "bad";
 }
 
-function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
+function scoreFrame(canvas: HTMLCanvasElement, sourceWidth = canvas.width, sourceHeight = canvas.height): QualityScore {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return defaultQuality;
 
   const sampleWidth = 160;
-  const sampleHeight = Math.max(100, Math.round((canvas.height / canvas.width) * sampleWidth));
+  const sampleHeight = Math.max(100, Math.round((sourceHeight / sourceWidth) * sampleWidth));
   const sample = document.createElement("canvas");
   sample.width = sampleWidth;
   sample.height = sampleHeight;
@@ -293,7 +284,7 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
   const sharpness = edgeEnergy / grayscale.length;
   const centerDetailRatio = centerEdgeEnergy / Math.max(1, edgeEnergy);
   const cornerDetailRatio = cornerEdgeEnergy / Math.max(1, edgeEnergy);
-  const megapixels = (canvas.width * canvas.height) / 1_000_000;
+  const megapixels = (sourceWidth * sourceHeight) / 1_000_000;
 
   gradientMagnitudes.sort((a, b) => a - b);
   const medianGradient = gradientMagnitudes[Math.floor(gradientMagnitudes.length / 2)] || 0;
@@ -449,8 +440,8 @@ function scoreFrame(canvas: HTMLCanvasElement): QualityScore {
     notes,
     checks,
     guidance,
-    frameWidth: canvas.width,
-    frameHeight: canvas.height,
+    frameWidth: sourceWidth,
+    frameHeight: sourceHeight,
     glarePercent: Number(glarePercent.toFixed(1)),
     contrast: Math.round(contrast)
   };
@@ -468,12 +459,12 @@ async function scoreUploadedImage(file: File): Promise<QualityScore> {
     image.src = url;
     await loaded;
     const canvas = document.createElement("canvas");
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
+    canvas.width = Math.min(640, image.naturalWidth);
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * canvas.width / image.naturalWidth));
     const ctx = canvas.getContext("2d");
     if (!ctx) return defaultQuality;
-    ctx.drawImage(image, 0, 0);
-    return scoreFrame(canvas);
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return scoreFrame(canvas, image.naturalWidth, image.naturalHeight);
   } finally {
     URL.revokeObjectURL(url);
   }
@@ -494,6 +485,9 @@ export default function Home() {
   const [locationLabel, setLocationLabel] = useState("");
   const [lidarNotes, setLidarNotes] = useState("");
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const captureVersion = useRef(0);
+  const analysisAbort = useRef<AbortController | null>(null);
+  const [detailLevel, setDetailLevel] = useState<DetailLevel>("standard");
   const [analysis, setAnalysis] = useState<AnalysisResponse | null>(null);
   const [analytics, setAnalytics] = useState<InspectionAnalytics | null>(null);
   const [heatmap, setHeatmap] = useState<HeatmapData | null>(null);
@@ -515,11 +509,12 @@ export default function Home() {
   const cameraRestartRef = useRef(false);
 
   const severe = analysis?.diagnosis.severidad === "alta" || analysis?.diagnosis.severidad === "critica";
-  const evidenceMarkers = markerFallback(analysis);
   const riskScore = severityScore(analysis?.diagnosis.severidad);
   const riskQueue = reports.slice().sort((a, b) => b.riskScore - a.riskScore).slice(0, 4);
   const selectedCapture = captures.find((capture) => capture.id === selectedCaptureId) || captures[captures.length - 1] || null;
   const previewUrl = selectedCapture?.url || null;
+  const evidenceMarkers = markersForImage(analysis?.diagnosis,
+    captures.findIndex(capture => capture.id === selectedCapture?.id) + 1, captures.length);
   const perfectCaptures = captures.filter((capture) => capture.quality.grade === "P").length;
   const hasMeasurementReference = /\d|cm|mm|m\b|metro|metros|inch|in\b|ft\b|pie|pies|lidar|laser|nivel|escala/i.test(lidarNotes);
   const hasDimensionCapture = quality.grade === "P" || perfectCaptures > 0;
@@ -541,7 +536,14 @@ export default function Home() {
     setIsCameraActive(false);
   }, []);
 
+  const invalidateAnalysis = useCallback(() => {
+    captureVersion.current += 1;
+    analysisAbort.current?.abort();
+    setAnalysis(null);
+  }, []);
+
   const addCapture = useCallback((capture: CaptureItem) => {
+    invalidateAnalysis();
     captureUrlsRef.current.add(capture.url);
     setCaptures((current) => {
       const next = [...current, capture];
@@ -555,9 +557,10 @@ export default function Home() {
     });
     setSelectedCaptureId(capture.id);
     setQuality(capture.quality);
-  }, []);
+  }, [invalidateAnalysis]);
 
   const removeCapture = useCallback((id: string) => {
+    invalidateAnalysis();
     // Compute everything outside the updater — setState updaters must be pure
     // (React StrictMode runs them twice; side effects there fire twice).
     const target = captures.find((capture) => capture.id === id);
@@ -573,15 +576,16 @@ export default function Home() {
     if (target && selectedCaptureId === id) {
       setQuality(fallback?.quality || defaultQuality);
     }
-  }, [captures, selectedCaptureId]);
+  }, [captures, selectedCaptureId, invalidateAnalysis]);
 
   const clearCaptures = useCallback(() => {
+    invalidateAnalysis();
     captureUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     captureUrlsRef.current.clear();
     setCaptures([]);
     setSelectedCaptureId("");
     setQuality(defaultQuality);
-  }, []);
+  }, [invalidateAnalysis]);
 
   const refreshDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -715,13 +719,14 @@ export default function Home() {
     const canvas = canvasRef.current;
     if (!video || !canvas || !video.videoWidth) return null;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    // Preview coaching needs only a small sample; saved captures retain native pixels.
+    canvas.width = saveCapture ? video.videoWidth : Math.min(640, video.videoWidth);
+    canvas.height = Math.max(1, Math.round(video.videoHeight * canvas.width / video.videoWidth));
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
 
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const score = scoreFrame(canvas);
+    const score = scoreFrame(canvas, video.videoWidth, video.videoHeight);
     setQuality(score);
     if (!saveCapture) return null;
 
@@ -776,7 +781,10 @@ export default function Home() {
     async (files: FileList | File[]) => {
       stopStream();
       setCameraLabel("Imagen subida manualmente");
-      const selectedFiles = Array.from(files).slice(0, MAX_INSPECTION_IMAGES);
+      const selectedFiles = Array.from(files);
+      const uploadError = validateImageSet([...captures.map(capture => capture.file), ...selectedFiles]);
+      if (uploadError) { setError(uploadError); return; }
+      setError("");
       for (const file of selectedFiles) {
         try {
           const score = await scoreUploadedImage(file);
@@ -789,23 +797,11 @@ export default function Home() {
             createdAt: new Date().toISOString()
           });
         } catch {
-          addCapture({
-            id: crypto.randomUUID(),
-            file,
-            url: URL.createObjectURL(file),
-            quality: {
-              ...defaultQuality,
-              grade: "A",
-              notes: "Imagen subida; no se pudo calcular calidad local.",
-              guidance: ["Revise que la imagen este enfocada, iluminada y tenga escala si necesita medir."]
-            },
-            source: "Imagen subida",
-            createdAt: new Date().toISOString()
-          });
+          setError("No se pudo leer una imagen. Use JPEG, PNG o WebP validos.");
         }
       }
     },
-    [addCapture, stopStream]
+    [addCapture, stopStream, captures]
   );
 
   const analyze = useCallback(async () => {
@@ -819,7 +815,12 @@ export default function Home() {
         const captured = await captureFrame(true);
         if (captured) analysisCaptures = [captured];
       }
-      if (analysisCaptures.length === 0) throw new Error("Capture o suba una imagen primero.");
+      const uploadError = validateImageSet(analysisCaptures.map(capture => capture.file));
+      if (uploadError) throw new Error(uploadError);
+      const version = captureVersion.current;
+      const controller = new AbortController();
+      analysisAbort.current = controller;
+      const captureQuality = analysisCaptures[0].quality;
 
       const formData = new FormData();
       analysisCaptures.slice(0, MAX_INSPECTION_IMAGES).forEach((capture, index) => {
@@ -828,10 +829,16 @@ export default function Home() {
       formData.append("cameraLabel", cameraLabel);
       formData.append("locationLabel", locationLabel);
       formData.append("lidarNotes", lidarNotes);
-      formData.append(
-        "qualityNotes",
-        `${quality.grade}/${quality.status}: ${quality.notes}. Brillo ${quality.brightness}, nitidez ${quality.sharpness}, contraste ${quality.contrast}, reflejo ${quality.glarePercent}%, resolucion ${quality.frameWidth}x${quality.frameHeight}, imagenes ${analysisCaptures.length}, P ${analysisCaptures.filter((capture) => capture.quality.grade === "P").length}, medicion ${dimensionMode}.`
-      );
+      formData.append("detailLevel", detailLevel);
+      formData.append("quality-grade", captureQuality.grade);
+      formData.append("quality-brightness", String(captureQuality.brightness));
+      formData.append("quality-sharpness", String(captureQuality.sharpness));
+      formData.append("quality-glare", String(captureQuality.glarePercent));
+      formData.append("quality-contrast", String(captureQuality.contrast));
+      formData.append("qualityNotes", JSON.stringify(analysisCaptures.map((capture, index) => ({
+        image_index: index + 1, grade: capture.quality.grade,
+        width: capture.quality.frameWidth, height: capture.quality.frameHeight,
+      }))));
       if (coords) {
         formData.append("lat", String(coords.lat));
         formData.append("lng", String(coords.lng));
@@ -839,24 +846,32 @@ export default function Home() {
 
       const response = await fetch("/api/analyze", {
         method: "POST",
-        body: formData
+        body: formData,
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Fallo el analisis.");
+      if (version !== captureVersion.current) return;
+      stopStream();
       setAnalysis(payload as AnalysisResponse);
       loadOperationalData().catch(() => undefined);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Fallo inesperado.");
+      if (err instanceof Error && err.name === "AbortError") return;
+      setError(err instanceof Error && err.name === "TimeoutError"
+        ? "El analisis tardo demasiado. Reintente con menos fotos."
+        : err instanceof Error ? err.message : "Fallo inesperado.");
     } finally {
+      analysisAbort.current = null;
       setIsAnalyzing(false);
     }
-  }, [cameraLabel, captureFrame, captures, coords, dimensionMode, lidarNotes, loadOperationalData, locationLabel, quality]);
+  }, [cameraLabel, captureFrame, captures, coords, detailLevel, lidarNotes, loadOperationalData, locationLabel, stopStream]);
 
   useEffect(() => {
     const captureUrls = captureUrlsRef.current;
     refreshDevices().catch(() => undefined);
     loadOperationalData().catch(() => undefined);
     return () => {
+      analysisAbort.current?.abort();
       stopStream();
       captureUrls.forEach((url) => URL.revokeObjectURL(url));
       captureUrls.clear();
@@ -882,6 +897,10 @@ export default function Home() {
     }, 2000);
     return () => window.clearInterval(timer);
   }, [captureFrame]);
+
+  useEffect(() => {
+    if (activeTab !== "capture") stopStream();
+  }, [activeTab, stopStream]);
 
   const actionText = useMemo(() => {
     if (isAnalyzing) return "Analizando";
@@ -1021,7 +1040,7 @@ export default function Home() {
           <DefectHeatmap
             points={heatmap.points}
             totalDefects={heatmap.totalDefects}
-            referenceImage={previewUrl}
+            referenceImage={null}
           />
         )}
       </section>
@@ -1087,7 +1106,7 @@ export default function Home() {
         <div className="camera-panel">
           <div className="camera-toolbar">
             <label className="camera-source-select">
-              <select value={selectedDeviceId} onChange={(event) => setSelectedDeviceId(event.target.value)}>
+              <select aria-label="Camara" value={selectedDeviceId} onChange={(event) => setSelectedDeviceId(event.target.value)}>
                 {devices.length === 0 ? <option value="">Camara predeterminada</option> : null}
                 {devices.map((device) => (
                   <option key={device.deviceId} value={device.deviceId}>
@@ -1143,8 +1162,8 @@ export default function Home() {
           </div>
 
           <div className="viewer">
-            <video ref={videoRef} playsInline muted />
-            {!isCameraActive && previewUrl ? <img src={previewUrl} alt="Captura subida" /> : null}
+            <video ref={videoRef} playsInline muted style={{ display: isCameraActive ? "block" : "none" }} />
+            {!isCameraActive && previewUrl ? <EvidenceImage src={previewUrl} alt="Captura subida" markers={evidenceMarkers} /> : null}
             {!isCameraActive && !previewUrl ? (
               <div className="empty-view">
                 <Camera size={44} />
@@ -1225,20 +1244,6 @@ export default function Home() {
               </span>
             </div>
 
-            {evidenceMarkers.map((marker) => (
-              <div
-                className="evidence-marker"
-                key={`${marker.label}-${marker.x}-${marker.y}`}
-                style={{
-                  left: `${marker.x}%`,
-                  top: `${marker.y}%`,
-                  width: `${marker.width}%`,
-                  height: `${marker.height}%`
-                }}
-              >
-                <span>{marker.label}</span>
-              </div>
-            ))}
             {compareMode && compareImageUrl && previewUrl && (
               <div
                 ref={compareRef}
@@ -1279,13 +1284,24 @@ export default function Home() {
           </div>
           <canvas ref={canvasRef} hidden />
 
+          <label className="analysis-mode">
+            Revision de las fotos
+            <select aria-label="Revision de las fotos" value={detailLevel} disabled={isAnalyzing}
+              onChange={event => setDetailLevel(event.target.value as DetailLevel)}>
+              <option value="standard">Rapida: una revision</option>
+              <option value="detailed">Detallada: una revision con mas contexto</option>
+              <option value="forensic">Doble revision: tarda mas</option>
+            </select>
+            <small>Hasta 6 fotos y 4 MB en total. Se conservan los pixeles originales.</small>
+          </label>
           <div className="upload-row">
             <label className="upload-button">
               <Upload size={18} />
               <span className="btn-label-desktop">Subir imagen</span>
               <input
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp"
+                disabled={isAnalyzing}
                 capture="environment"
                 multiple
                 onChange={(event) => {
@@ -1473,11 +1489,12 @@ export default function Home() {
           <div className="diagnosis">
             <p className="eyebrow">Diagnostico por {analysis.model}</p>
             <div className="result-heading">
-              <h2>{analysis.diagnosis.tipo_defecto}</h2>
+              <h2>{diagnosisTitle(analysis.diagnosis)}</h2>
               <span className={clsx("severity", analysis.diagnosis.severidad)}>
                 {analysis.diagnosis.severidad}
               </span>
             </div>
+            {(analysis.warnings || []).map(warning => <p role="status" className="error" key={warning}>{warning}</p>)}
             <p>{analysis.diagnosis.causa_probable}</p>
             <div className="result-grid">
               <div>
@@ -1497,11 +1514,12 @@ export default function Home() {
                 <strong>{Math.round(analysis.diagnosis.confianza * 100)}%</strong>
               </div>
             </div>
-            <div className="risk-meter">
+            {analysis.diagnosis.outcome === "defect_detected" && <div className="risk-meter">
               <span>Indice de riesgo</span>
               <div><i style={{ width: `${riskScore}%` }} /></div>
               <strong>{riskScore}/100</strong>
             </div>
+            }
             <h3>Evidencia visual</h3>
             <div className="evidence-list">
               {analysis.diagnosis.evidencia_visual.map((item) => (
@@ -1522,7 +1540,7 @@ export default function Home() {
             </ol>
           </div>
 
-          <div className="installers">
+          {analysis.diagnosis.outcome === "defect_detected" && <div className="installers">
             <h2>Instaladores sugeridos</h2>
             {analysis.installers.length === 0 ? (
               <p className="muted">No hay instaladores cargados todavia. Agreguelos en Supabase.</p>
@@ -1537,7 +1555,7 @@ export default function Home() {
                 </article>
               ))
             )}
-          </div>
+          </div>}
         </section>
       ) : null}
 

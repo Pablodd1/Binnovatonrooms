@@ -1,4 +1,4 @@
-const CACHE_NAME = "buildscan-v1";
+const CACHE_NAME = "buildscan-v2";
 const STATIC_ASSETS = ["/", "/login", "/reports", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
@@ -20,22 +20,26 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
-  // API calls: network-first
+  // Inspection/auth responses must not be replayed across users or after failures.
   if (url.pathname.startsWith("/api/")) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          return response;
-        })
-        .catch(() => caches.match(event.request))
-    );
+    event.respondWith(fetch(event.request));
     return;
   }
 
   // Supabase / external: network-only
   if (url.hostname !== self.location.hostname) {
+    return;
+  }
+
+  // Refresh document shells after deployment instead of pinning old app bundles.
+  if (event.request.mode === "navigate") {
+    event.respondWith(fetch(event.request).then((response) => {
+      if (response.ok) {
+        const clone = response.clone();
+        event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone)));
+      }
+      return response;
+    }).catch(async () => (await caches.match(event.request)) || Response.error()));
     return;
   }
 

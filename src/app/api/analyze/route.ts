@@ -1,6 +1,6 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, MediaResolution } from "@google/genai";
 import { NextResponse } from "next/server";
-import { inspectionJsonSchema, type InspectionDiagnosis, type DetailLevel } from "@/lib/analysis-schema";
+import { inspectionJsonSchema, type InspectionDiagnosis } from "@/lib/analysis-schema";
 import { matchInstallers } from "@/lib/installer-match";
 import {
   checkRateLimit,
@@ -16,25 +16,16 @@ import {
 } from "@/lib/request-guards";
 import { requireGeminiConfig } from "@/lib/server-config";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { parseDiagnosis, selectDetailLevel, shouldReview } from "@/lib/analysis-policy";
+import { generateDiagnosis, ANALYSIS_BUDGET_MS } from "@/lib/gemini";
+import { validateImageSet } from "@/lib/image-limits";
 import { buildUserPrompt, buildFollowUpPrompt, SYSTEM_PROMPT } from "@/lib/vision-prompt";
 import { auth } from "@/lib/auth";
 import { createRequestLogger, generateRequestId, logger } from "@/lib/logger";
-import {
-  detectDefectsBatch,
-  detectionToEvidenceMarkers,
-  detectionSummary,
-  depthToMeasurementContext,
-  type DetectionResult,
-  type DepthResult,
-} from "@/lib/detection-client";
+import { detectDefectsBatch } from "@/lib/detection-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const GEMINI_TIMEOUT_MS = 45_000;
-const GEMINI_RETRY_COUNT = 2;
-const GEMINI_RETRY_DELAY_MS = 2_000;
-const DETAIL_LEVELS: DetailLevel[] = ["standard", "detailed", "forensic"];
 
 async function fileToGeminiPart(file: File) {
   const bytes = Buffer.from(await file.arrayBuffer());
@@ -153,205 +144,6 @@ async function saveReport(input: {
   return reportId;
 }
 
-async function callGeminiWithRetry(
-  client: GoogleGenAI,
-  model: string,
-  contents: Parameters<GoogleGenAI["models"]["generateContent"]>[0]["contents"],
-  config: Parameters<GoogleGenAI["models"]["generateContent"]>[0]["config"],
-  log: ReturnType<typeof createRequestLogger>
-): Promise<{ raw: string; durationMs: number }> {
-  let lastError: unknown = null;
-
-  for (let attempt = 1; attempt <= GEMINI_RETRY_COUNT; attempt++) {
-    const startTime = Date.now();
-    const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), GEMINI_TIMEOUT_MS);
-
-    try {
-      log.info({ attempt, model }, "Gemini API call starting");
-
-      const response = await client.models.generateContent({
-        model,
-        contents,
-        config,
-      } as Parameters<typeof client.models.generateContent>[0]);
-
-      clearTimeout(timeoutId);
-      const raw = response.text || "";
-      const durationMs = Date.now() - startTime;
-
-      if (!raw) {
-        log.warn({ attempt, durationMs }, "Gemini returned empty response");
-        lastError = new Error("Empty response");
-        if (attempt < GEMINI_RETRY_COUNT) {
-          await new Promise((r) => setTimeout(r, GEMINI_RETRY_DELAY_MS * attempt));
-          continue;
-        }
-        return { raw: "", durationMs };
-      }
-
-      log.info({ attempt, durationMs, rawLength: raw.length }, "Gemini API call succeeded");
-      return { raw, durationMs };
-    } catch (error: unknown) {
-      clearTimeout(timeoutId);
-      lastError = error;
-      const durationMs = Date.now() - startTime;
-      const message = error instanceof Error ? error.message : "Unknown error";
-      log.error({ attempt, durationMs, error: message }, "Gemini API call failed");
-
-      if (error instanceof Error && error.name === "AbortError") {
-        log.warn({ attempt }, "Gemini call timed out");
-        if (attempt < GEMINI_RETRY_COUNT) {
-          await new Promise((r) => setTimeout(r, GEMINI_RETRY_DELAY_MS * attempt));
-          continue;
-        }
-        return { raw: "", durationMs };
-      }
-
-      if (attempt < GEMINI_RETRY_COUNT) {
-        const delay = GEMINI_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
-        log.info({ attempt, delay }, "Retrying Gemini call");
-        await new Promise((r) => setTimeout(r, delay));
-        continue;
-      }
-    }
-  }
-
-  throw lastError;
-}
-
-function detectDetailLevel(lidarNotes: string, qualityNotes: string, imageCount: number): DetailLevel {
-  const hasScale = /\d|cm|mm|m\b|metro|metros|inch|in\b|ft\b|pie|pies|lidar|laser|nivel|escala/i.test(lidarNotes);
-  const hasHighRes = qualityNotes.includes("P") || qualityNotes.includes("2MP") || qualityNotes.includes("4MP");
-  const hasMultipleImages = imageCount >= 3;
-
-  if (hasScale && hasHighRes && hasMultipleImages) return "forensic";
-  if (hasScale || hasHighRes || hasMultipleImages) return "detailed";
-  return "standard";
-}
-
-function mergeDiagnoses(
-  first: InspectionDiagnosis,
-  second: InspectionDiagnosis | null
-): InspectionDiagnosis {
-  if (!second) return first;
-
-  const merged = { ...first };
-
-  if (second.severidad === "critica" || (first.severidad !== "critica" && second.severidad === "alta")) {
-    merged.severidad = second.severidad;
-  }
-
-  merged.confianza = Math.max(first.confianza, second.confianza);
-
-  if (second.requiere_revision_humana) merged.requiere_revision_humana = true;
-
-  const evidenceSet = new Set([...first.evidencia_visual, ...second.evidencia_visual]);
-  merged.evidencia_visual = [...evidenceSet].slice(0, 12);
-
-  const indicatorSet = new Map(
-    first.visual_indicators.map((ind) => [`${ind.label}-${Math.round(ind.x)}-${Math.round(ind.y)}`, ind])
-  );
-  for (const ind of second.visual_indicators) {
-    const key = `${ind.label}-${Math.round(ind.x)}-${Math.round(ind.y)}`;
-    if (!indicatorSet.has(key) || ind.confidence > (indicatorSet.get(key)?.confidence || 0)) {
-      indicatorSet.set(key, ind);
-    }
-  }
-  merged.visual_indicators = [...indicatorSet.values()].slice(0, 8);
-
-  if (second.causa_probable && second.causa_probable.length > first.causa_probable.length) {
-    merged.causa_probable = second.causa_probable;
-  }
-
-  const riskSet = new Set([...first.riesgos, ...second.riesgos]);
-  merged.riesgos = [...riskSet].slice(0, 6);
-
-  const solutionSet = new Set([...first.solucion_paso_a_paso, ...second.solucion_paso_a_paso]);
-  merged.solucion_paso_a_paso = [...solutionSet].slice(0, 8);
-
-  const measurementSet = new Set([...first.mediciones_recomendadas, ...second.mediciones_recomendadas]);
-  merged.mediciones_recomendadas = [...measurementSet].slice(0, 6);
-
-  return merged;
-}
-
-function mergeYoloIntoDiagnosis(
-  diagnosis: InspectionDiagnosis,
-  detections: DetectionResult[],
-  depth: DepthResult | null
-): InspectionDiagnosis {
-  if (detections.length === 0) return diagnosis;
-
-  const merged = { ...diagnosis };
-  const summary = detectionSummary(detections);
-
-  const yoloMarkers = detectionToEvidenceMarkers(detections, 1, 1);
-  const existingKeys = new Set(
-    merged.visual_indicators.map((ind) => `${ind.label}-${Math.round(ind.x)}-${Math.round(ind.y)}`)
-  );
-
-  for (const marker of yoloMarkers) {
-    if (!existingKeys.has(`${marker.label}-${Math.round(marker.x)}-${Math.round(marker.y)}`)) {
-      merged.visual_indicators.push(marker);
-    }
-  }
-  merged.visual_indicators = merged.visual_indicators.slice(0, 12);
-
-  const defectTypeMap: Record<string, string> = {
-    // Construction-specific model classes (cazzz307/yolov8-crack-detection and similar)
-    crack: "grieta",
-    cracks: "grieta",
-    longitudinal: "grieta",
-    transverse: "grieta",
-    alligator: "grieta",
-    spalling: "acabado",
-    spall: "acabado",
-    pothole: "acabado",
-    rust: "oxido",
-    corrosion: "oxido",
-    corrosion_rust: "oxido",
-    exposed_rebar: "instalacion",
-    rebar: "instalacion",
-    moisture: "humedad",
-    damp: "humedad",
-    efflorescence: "humedad",
-    stain: "acabado",
-    staining: "acabado",
-    water_stain: "humedad",
-    structural: "desplome",
-    collapse: "desplome",
-    // Fallback for unrecognized classes
-  };
-
-  for (const [yoloType, count] of Object.entries(summary.defectTypes)) {
-    const mappedType = defectTypeMap[yoloType.toLowerCase()] || "otro";
-    if (mappedType === merged.tipo_defecto && count >= 2) {
-      merged.confianza = Math.min(1, merged.confianza + 0.05);
-    }
-  }
-
-  if (summary.highConfidenceCount >= 3 && merged.severidad !== "critica") {
-    merged.severidad = "alta";
-    merged.requiere_revision_humana = true;
-  }
-
-  if (depth) {
-    const depthContext = depthToMeasurementContext(depth);
-    if (!merged.mediciones_recomendadas.some((m) => m.includes("depth"))) {
-      merged.mediciones_recomendadas.push(`Depth analysis: ${depthContext}`);
-    }
-  }
-
-  const yoloEvidences = detections.map(
-    (d) => `YOLO detection: ${d.defect_type} (${Math.round(d.confidence * 100)}% confidence)`
-  );
-  const evidenceSet = new Set([...merged.evidencia_visual, ...yoloEvidences]);
-  merged.evidencia_visual = [...evidenceSet].slice(0, 12);
-
-  return merged;
-}
-
 export async function POST(request: Request) {
   const requestId = generateRequestId();
   const log = createRequestLogger(requestId, request);
@@ -415,10 +207,7 @@ export async function POST(request: Request) {
   const qualityNotes = sanitizeText(formData.get("qualityNotes"), "", 500);
   const lat = boundedCoordinate(numberOrNull(formData.get("lat")), -90, 90);
   const lng = boundedCoordinate(numberOrNull(formData.get("lng")), -180, 180);
-  const requestedDetailLevel = formData.get("detailLevel") as DetailLevel | null;
-  const detailLevel = requestedDetailLevel && DETAIL_LEVELS.includes(requestedDetailLevel)
-    ? requestedDetailLevel
-    : detectDetailLevel(lidarNotes, qualityNotes, imageEntries.length);
+  const detailLevel = selectDetailLevel(formData.get("detailLevel"));
 
   log.info({ detailLevel, imageCount: imageEntries.length, cameraLabel, locationLabel }, "Analysis parameters");
 
@@ -430,11 +219,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Gemini is not configured." }, { status: 500 });
   }
 
+  const setError = validateImageSet(imageEntries);
+  if (setError) return NextResponse.json({ error: setError }, { status: 413 });
+
   const imagePayloads = await Promise.all(imageEntries.map((image) => fileToGeminiPart(image)));
   const client = new GoogleGenAI({ apiKey: geminiConfig.apiKey });
   const model = geminiConfig.model;
 
   const startTime = Date.now();
+  const deadline = startTime + ANALYSIS_BUDGET_MS;
+  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(ANALYSIS_BUDGET_MS)]);
+  const warnings: string[] = [];
+  let reviewCompleted = false;
+  const imageParts = imagePayloads.flatMap((payload, index) => [
+    { text: `Foto ${index + 1} (image_index=${index + 1}):` }, payload.part,
+  ]);
+  const generationConfig = {
+    systemInstruction: SYSTEM_PROMPT,
+    responseMimeType: "application/json",
+    responseSchema: inspectionJsonSchema,
+    mediaResolution: MediaResolution.MEDIA_RESOLUTION_HIGH,
+  };
 
   const imageBuffers = imageEntries.map((image, index) => ({
     buffer: imagePayloads[index].bytes,
@@ -444,11 +249,13 @@ export async function POST(request: Request) {
   log.info("Starting YOLO detection and Gemini analysis in parallel");
 
   const [yoloResult, geminiResult] = await Promise.all([
-    detectDefectsBatch(imageBuffers, {
+    (detailLevel === "forensic" ? detectDefectsBatch(imageBuffers, {
       confidence: 0.25,
-      useSahi: detailLevel === "forensic" || detailLevel === "detailed",
-      includeDepth: true,
-    }).catch((error) => {
+      useSahi: true,
+      includeDepth: false, // Relative monocular depth is not a calibrated measurement.
+      signal,
+      timeoutMs: 8_000,
+    }) : Promise.resolve(null)).catch((error) => {
       log.warn({ error: error instanceof Error ? error.message : "Unknown" }, "YOLO detection failed, continuing with Gemini only");
       return null;
     }),
@@ -465,18 +272,15 @@ export async function POST(request: Request) {
       let firstPassRaw = "";
       let firstPassDurationMs = 0;
       try {
-        const result = await callGeminiWithRetry(
+        const result = await generateDiagnosis(
           client,
           model,
           [
-            { text: `${SYSTEM_PROMPT}\n\n${userPrompt}` },
-            ...imagePayloads.map((payload) => payload.part),
+            { text: userPrompt },
+            ...imageParts,
           ],
-          {
-            responseMimeType: "application/json",
-            responseSchema: inspectionJsonSchema,
-          },
-          log
+          generationConfig,
+          signal, deadline
         );
         firstPassRaw = result.raw;
         firstPassDurationMs = result.durationMs;
@@ -492,7 +296,7 @@ export async function POST(request: Request) {
 
       let firstPassDiagnosis: InspectionDiagnosis;
       try {
-        firstPassDiagnosis = JSON.parse(firstPassRaw) as InspectionDiagnosis;
+        firstPassDiagnosis = parseDiagnosis(firstPassRaw, imageEntries.length);
       } catch (error) {
         log.error({ raw: firstPassRaw.slice(0, 200) }, "Failed to parse first pass response");
         return { error: "The visual analysis service returned an invalid diagnosis.", status: 502 as const };
@@ -501,7 +305,7 @@ export async function POST(request: Request) {
       let finalDiagnosis = firstPassDiagnosis;
       let secondPassDurationMs = 0;
 
-      if (imageEntries.length >= 2 && (detailLevel === "detailed" || detailLevel === "forensic")) {
+      if (shouldReview(detailLevel, deadline - Date.now())) {
         log.info("Starting second pass analysis for multi-image forensic review");
         try {
           const followUpPrompt = buildFollowUpPrompt({
@@ -511,32 +315,35 @@ export async function POST(request: Request) {
             locationLabel,
           });
 
-          const result = await callGeminiWithRetry(
+          const result = await generateDiagnosis(
             client,
             model,
             [
-              { text: `${SYSTEM_PROMPT}\n\n${followUpPrompt}` },
-              ...imagePayloads.map((payload) => payload.part),
+              { text: followUpPrompt },
+              ...imageParts,
             ],
-            {
-              responseMimeType: "application/json",
-              responseSchema: inspectionJsonSchema,
-            },
-            log
+            generationConfig,
+            signal, deadline
           );
 
           secondPassDurationMs = result.durationMs;
 
           if (result.raw) {
-            const secondPassDiagnosis = JSON.parse(result.raw) as InspectionDiagnosis;
-            finalDiagnosis = mergeDiagnoses(firstPassDiagnosis, secondPassDiagnosis);
+            const secondPassDiagnosis = parseDiagnosis(result.raw, imageEntries.length);
+            // A coherent revised diagnosis can retract unsupported first-pass findings.
+            finalDiagnosis = secondPassDiagnosis;
+            reviewCompleted = true;
             log.info({ firstPassConfidence: firstPassDiagnosis.confianza, secondPassConfidence: secondPassDiagnosis.confianza }, "Second pass completed");
           }
         } catch (error) {
+          warnings.push("La segunda revision no se completo; se muestra el primer analisis validado.");
           log.warn({ error: error instanceof Error ? error.message : "Unknown" }, "Second pass failed, using first pass results");
         }
       }
 
+      if (detailLevel === "forensic" && !reviewCompleted && warnings.length === 0) {
+        warnings.push("No hubo tiempo para una segunda revision; se muestra el primer analisis validado.");
+      }
       return { diagnosis: finalDiagnosis, firstPassDurationMs, secondPassDurationMs };
     })(),
   ]);
@@ -545,22 +352,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: geminiResult.error }, { status: geminiResult.status });
   }
 
-  let finalDiagnosis = geminiResult.diagnosis;
-
-  if (yoloResult && yoloResult.detections.length > 0) {
-    const firstDepth = yoloResult.depths?.[0] || null;
-    log.info({ yoloDetections: yoloResult.detections.length, depthAvailable: !!firstDepth }, "Merging YOLO detections into diagnosis");
-    finalDiagnosis = mergeYoloIntoDiagnosis(finalDiagnosis, yoloResult.detections, firstDepth);
-  }
-
+  const finalDiagnosis = geminiResult.diagnosis;
+  // Detector candidates stay separate: counts cannot establish severity or diagnostic confidence.
   const totalDurationMs = Date.now() - startTime;
 
   finalDiagnosis.analysis_metadata = {
     detail_level: detailLevel,
     image_count: imagePayloads.length,
-    analysis_pass: geminiResult.secondPassDurationMs > 0 ? 2 : 1,
+    analysis_pass: reviewCompleted ? 2 : 1,
     processing_time_ms: totalDurationMs,
-    total_defects_found: finalDiagnosis.evidencia_visual.length,
+    review_completed: reviewCompleted,
+    warnings,
     micro_defects_detected: finalDiagnosis.riesgos.filter(
       (r) => r.includes("micro") || r.includes("fina") || r.includes("incipiente") || r.includes("incip")
     ),
@@ -574,7 +376,8 @@ export async function POST(request: Request) {
 
   const [imageUrls, installers] = await Promise.all([
     Promise.all(imagePayloads.map((payload) => storeImage(payload.bytes, payload.mimeType))),
-    matchInstallers({ diagnosis: finalDiagnosis, lat, lng }),
+    finalDiagnosis.outcome === "defect_detected"
+      ? matchInstallers({ diagnosis: finalDiagnosis, lat, lng }) : Promise.resolve([]),
   ]);
 
   const imageUrl = imageUrls[0] ?? null;
@@ -590,7 +393,7 @@ export async function POST(request: Request) {
     grade: sanitizeText(formData.get("quality-grade"), "", 1),
     detailLevel,
     analysisDurationMs: totalDurationMs,
-    analysisPasses: geminiResult.secondPassDurationMs > 0 ? 2 : 1,
+    analysisPasses: reviewCompleted ? 2 : 1,
     yoloDetections: yoloResult?.detections.length || 0,
     yoloDevice: yoloResult?.device || "unavailable",
     depthAvailable: !!yoloResult?.depths?.[0],
@@ -631,12 +434,14 @@ export async function POST(request: Request) {
     yoloDetections: yoloResult?.detections.length || 0,
     depthAvailable: !!yoloResult?.depths?.[0],
     userId: userId || "anonymous",
-    totalDefects: finalDiagnosis.evidencia_visual.length,
+    outcome: finalDiagnosis.outcome,
   }, "Analysis complete");
 
   return NextResponse.json({
     reportId,
     diagnosis: finalDiagnosis,
+    saved: Boolean(reportId),
+    warnings: [...warnings, ...(!reportId ? ["Analisis completado, pero el reporte no se guardo. Exporte el JSON antes de salir."] : [])],
     installers,
     imageUrl,
     imageUrls,

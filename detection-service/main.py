@@ -4,6 +4,7 @@ import time
 import logging
 from typing import Optional
 from contextlib import asynccontextmanager
+from functools import lru_cache
 
 import cv2
 import numpy as np
@@ -21,6 +22,7 @@ YOLO_MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "OpenSistemas/YOLOv8-crack-seg/yo
 logger.info(f"Using device: {DEVICE}")
 logger.info(f"YOLO model path: {YOLO_MODEL_PATH}")
 
+resolved_yolo_path = YOLO_MODEL_PATH
 yolo_model = None
 depth_model = None
 depth_processor = None
@@ -73,11 +75,12 @@ def resolve_yolo_model_path(path: str) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global yolo_model, depth_model, depth_processor
+    global yolo_model, depth_model, depth_processor, resolved_yolo_path
     logger.info("Loading models...")
     try:
         from ultralytics import YOLO
         resolved_path = resolve_yolo_model_path(YOLO_MODEL_PATH)
+        resolved_yolo_path = resolved_path
         logger.info(f"Loading YOLO from resolved path: {resolved_path}")
         yolo_model = YOLO(resolved_path)
         logger.info("YOLO model loaded")
@@ -121,6 +124,7 @@ app.add_middleware(
 
 
 class DetectionResult(BaseModel):
+    image_index: int = 1
     defect_type: str
     confidence: float
     x_center: float
@@ -229,32 +233,29 @@ def run_depth_estimation(image: Image.Image) -> DepthResult:
     return result
 
 
+@lru_cache(maxsize=1)
+def get_sahi_model(confidence: float):
+    from sahi import AutoDetectionModel
+    for model_type in ("ultralytics", "yolov8"):
+        try:
+            return AutoDetectionModel.from_pretrained(
+                model_type=model_type,
+                model_path=resolved_yolo_path,
+                confidence_threshold=confidence,
+                device=DEVICE,
+            )
+        except (KeyError, ValueError):
+            continue
+    raise ValueError("No supported SAHI model type")
+
+
 def run_sahi_inference(image: Image.Image, confidence: float = 0.25) -> list[DetectionResult]:
     if yolo_model is None:
         raise HTTPException(status_code=503, detail="YOLO model not loaded")
 
     try:
-        from sahi import AutoDetectionModel
         from sahi.predict import get_sliced_prediction
-
-        # SAHI model_type: older versions use "yolov8", newer use "ultralytics".
-        # Try both to be version-tolerant.
-        sahi_model = None
-        for model_type in ("yolov8", "ultralytics"):
-            try:
-                sahi_model = AutoDetectionModel.from_pretrained(
-                    model_type=model_type,
-                    model_path=YOLO_MODEL_PATH,
-                    confidence_threshold=confidence,
-                    device=DEVICE,
-                )
-                break
-            except (KeyError, ValueError):
-                continue
-
-        if sahi_model is None:
-            logger.warning("SAHI could not load model with any known model_type, falling back to standard YOLO")
-            return run_yolo_inference(image, confidence)
+        sahi_model = get_sahi_model(confidence)
 
         img_array = np.array(image)
         if img_array.shape[2] == 4:
@@ -365,7 +366,10 @@ async def detect_batch(
     all_detections = []
     depths = []
 
-    for file in files[:6]:
+    if not files or len(files) > 6:
+        raise HTTPException(status_code=400, detail="Use 1 to 6 images")
+
+    for image_index, file in enumerate(files, start=1):
         if not file.content_type or not file.content_type.startswith("image/"):
             continue
 
@@ -376,7 +380,7 @@ async def detect_batch(
             continue
 
         detections = run_sahi_inference(image, confidence) if use_sahi else run_yolo_inference(image, confidence)
-        all_detections.extend(detections)
+        all_detections.extend(det.model_copy(update={"image_index": image_index}) for det in detections)
 
         if include_depth:
             try:
@@ -404,7 +408,7 @@ def _merge_detections(detections: list[DetectionResult]) -> list[DetectionResult
 
     merged = {}
     for det in detections:
-        key = (det.defect_type, round(det.x_center, 2), round(det.y_center, 2))
+        key = (det.image_index, det.defect_type, round(det.x_center, 2), round(det.y_center, 2))
         if key not in merged or det.confidence > merged[key].confidence:
             merged[key] = det
 

@@ -3,8 +3,25 @@ import {
   detectionToEvidenceMarkers,
   detectionSummary,
   depthToMeasurementContext,
+  parseBatchDetection,
   type DetectionResult,
 } from "@/lib/detection-client";
+
+describe("batch photo identity", () => {
+  const det = { defect_type: "crack", confidence: 0.8, x_center: 0.5,
+    y_center: 0.5, width: 0.1, height: 0.1, class_id: 0 };
+  const response = { detections: [det], depths: [], processing_time_ms: 10, image_count: 2, device: "cpu" };
+  it("does not attach unlabelled legacy detections to arbitrary photos", () => {
+    expect(parseBatchDetection(response, 2).detections).toEqual([]);
+    expect(parseBatchDetection({ ...response, image_count: 1 }, 1).detections[0].image_index).toBe(1);
+  });
+  it("preserves different photo identities and rejects malformed confidence", () => {
+    expect(parseBatchDetection({ ...response, detections: [
+      { ...det, image_index: 1 }, { ...det, image_index: 2 },
+    ] }, 2).detections.map(d => d.image_index)).toEqual([1, 2]);
+    expect(() => parseBatchDetection({ ...response, detections: [{ ...det, confidence: 2 }] }, 2)).toThrow();
+  });
+});
 
 describe("detectionToEvidenceMarkers", () => {
   const sampleDetections: DetectionResult[] = [
