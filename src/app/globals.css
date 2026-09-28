@@ -2293,3 +2293,204 @@ ol {
 }
 .analysis-mode { display: grid; gap: 8px; padding: 16px; }
 .analysis-mode small { color: var(--muted); }
+
+/* ─── Glassmorphism theme (override layer) ───
+   Frosted translucent surfaces over an animated aurora background.
+   Delete this block to revert to the solid dark theme. */
+
+:root {
+  --bg: #0b1017;
+  --panel: rgba(255, 255, 255, 0.055);
+  --panel-2: rgba(255, 255, 255, 0.085);
+  --panel-3: rgba(255, 255, 255, 0.13);
+  --line: rgba(255, 255, 255, 0.14);
+  --glass-blur: 16px;
+  --glass-radius: 16px;
+}
+
+/* Aurora background — gives the blur something to refract */
+body {
+  background:
+    radial-gradient(42rem 42rem at 8% -10%, rgba(66, 211, 146, 0.16), transparent 60%),
+    radial-gradient(38rem 38rem at 96% 12%, rgba(124, 199, 255, 0.15), transparent 62%),
+    radial-gradient(46rem 46rem at 55% 115%, rgba(243, 189, 71, 0.08), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* Frosted surfaces */
+@supports (backdrop-filter: blur(1px)) {
+  .kpi-card,
+  .analytics-panel,
+  .camera-panel,
+  .control-panel,
+  .results,
+  .error-box,
+  .error-state,
+  .panel-block,
+  .tab-bar,
+  .topbar,
+  .shot-progress,
+  .capture-strip,
+  .bottom-sheet,
+  .grade-card,
+  .coach-check,
+  .shot-card,
+  .report-card,
+  .report-detail,
+  .playbook {
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+    background: rgba(255, 255, 255, 0.055);
+  }
+}
+
+/* Soften radii + inner top highlight (glass edge) */
+.kpi-card,
+.analytics-panel,
+.camera-panel,
+.control-panel,
+.results,
+.error-box,
+.error-state,
+.tab-bar,
+.bottom-sheet,
+.report-card {
+  border-radius: var(--glass-radius);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 10px 34px rgba(0, 0, 0, 0.28);
+}
+
+/* Panel blocks: separate glass tiles instead of one opaque slab */
+.panel-block {
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* Inputs & selects: translucent wells */
+select,
+input,
+textarea {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+/* Buttons: glass pills */
+button,
+.upload-button {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
+
+button:hover,
+.upload-button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+button.primary {
+  background: linear-gradient(135deg, rgba(66, 211, 146, 0.85), rgba(66, 211, 146, 0.62));
+  border: 1px solid rgba(66, 211, 146, 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 6px 18px rgba(66, 211, 146, 0.25);
+}
+
+/* Tab bar: floating frosted dock */
+.tab-bar {
+  border-radius: 14px;
+  background: rgba(13, 20, 28, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.tab-btn.active {
+  background: rgba(66, 211, 146, 0.16);
+  border-color: rgba(66, 211, 146, 0.45);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
+
+/* Viewer chrome already translucent — deepen to match */
+.capture-coach-overlay,
+.viewer-ctrl-btn {
+  background: rgba(13, 20, 28, 0.55);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
+}
+
+/* Bottom sheet: frosted glass panel */
+.bottom-sheet {
+  background: rgba(17, 25, 35, 0.82);
+  backdrop-filter: blur(22px) saturate(1.4);
+  -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10), 0 -14px 40px rgba(0, 0, 0, 0.4);
+}
+
+.bottom-sheet-header {
+  background: transparent;
+}
+
+/* KPI numerals pop on glass */
+.kpi-card strong {
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+}
+
+/* Status pills & badges */
+.status-pill,
+.measurement-badge {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+}
+
+/* Report cards */
+.report-card,
+.report-detail {
+  border-radius: var(--glass-radius);
+}
+
+/* Keep text crisp above blur */
+.kpi-card,
+.analytics-panel,
+.panel-block,
+.tab-bar,
+.bottom-sheet {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Mobile: reduce blur cost on weak GPUs */
+@media (max-width: 700px) {
+  :root {
+    --glass-blur: 12px;
+  }
+}
+
+/* No-blur fallback: readable translucency without backdrop-filter */
+@supports not (backdrop-filter: blur(1px)) {
+  .kpi-card,
+  .analytics-panel,
+  .camera-panel,
+  .control-panel,
+  .results,
+  .error-box,
+  .error-state,
+  .panel-block,
+  .tab-bar,
+  .shot-progress,
+  .capture-strip,
+  .bottom-sheet,
+  .grade-card,
+  .coach-check,
+  .shot-card,
+  .report-card,
+  .playbook {
+    background: rgba(20, 30, 41, 0.92);
+  }
+}
