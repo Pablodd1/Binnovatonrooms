@@ -33,6 +33,15 @@ Jasmethod/
 John-wellness-/
 Key-inventory/
 real-estate-dates-WEBSITE2/
+pocketscribe/
+research-watch/
+
+# Workspace debris (local scratch files)
+cron-fire-*.txt
+cron-logs.txt
+m8.txt
+scan-spanish.mjs
+.zcodeignore
 
 # ZCode internal
 .zcode/

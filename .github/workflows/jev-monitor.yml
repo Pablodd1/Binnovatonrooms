@@ -1,0 +1,54 @@
+name: Jev Web Error Monitor
+
+on:
+  schedule:
+    # Every 6 hours (UTC)
+    - cron: "0 */6 * * *"
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL to audit (defaults to the env var)"
+        required: false
+        default: ""
+
+concurrency:
+  group: jev-monitor
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Route health + Jev classification
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      BASE_URL: ${{ github.event.inputs.base_url || vars.BASE_URL || 'https://binnovatonrooms.vercel.app' }}
+      TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
+      ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Jev audit
+        run: node scripts/jev-audit.mjs
+
+      - name: Report failure
+        if: failure()
+        run: echo "::error title=Jev audit failed::One or more routes failed the health audit — see the audit log above."
