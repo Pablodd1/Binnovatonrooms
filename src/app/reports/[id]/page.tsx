@@ -33,9 +33,23 @@ type ReportData = {
   quality: unknown;
   status: string;
   closed_reason: string | null;
+  closed_category: string | null;
   closed_at: string | null;
   report_images: ReportImage[];
 };
+
+const CLOSED_CATEGORY_LABELS: Record<string, string> = {
+  reparado: "Reparado",
+  falso_positivo: "Falso positivo",
+  duplicado: "Duplicado",
+  no_aplica: "No aplica",
+  sin_dato: "Sin dato",
+  otro: "Otro",
+};
+
+function closedCategoryLabel(category: string): string {
+  return CLOSED_CATEGORY_LABELS[category] || category;
+}
 
 const SEVERITY_LABELS: Record<string, string> = {
   critica: "Critica",
@@ -239,6 +253,12 @@ export default function ReportDetailPage() {
           {/* Closed info */}
           {isClosed && (
             <div className="closed-info">
+              {report.closed_category && (
+                <div className="detail-field">
+                  <span className="muted-text">Categoria (Jev)</span>
+                  <p><span className={`closed-category-chip cat-${report.closed_category}`}>{closedCategoryLabel(report.closed_category)}</span></p>
+                </div>
+              )}
               {report.closed_reason && (
                 <div className="detail-field">
                   <span className="muted-text">Motivo de cierre</span>

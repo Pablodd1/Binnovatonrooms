@@ -47,6 +47,7 @@ create table if not exists public.reportes (
   ) stored,
   status text not null default 'nuevo' check (status in ('nuevo', 'revision', 'asignar', 'cerrado')),
   closed_reason text,
+  closed_category text check (closed_category in ('reparado', 'falso_positivo', 'duplicado', 'no_aplica', 'sin_dato', 'otro')),
   closed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -101,6 +102,7 @@ create index if not exists report_images_report_order_idx on public.report_image
 create index if not exists reportes_user_id_idx on public.reportes (user_id);
 create index if not exists reportes_risk_score_idx on public.reportes (risk_score desc);
 create index if not exists reportes_status_workflow_idx on public.reportes (status, created_at desc);
+create index if not exists reportes_closed_category_idx on public.reportes (closed_category) where closed_category is not null;
 create index if not exists reportes_lat_lng_idx on public.reportes (lat, lng);
 
 create or replace function public.distance_km(

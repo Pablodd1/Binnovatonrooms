@@ -2494,3 +2494,20 @@ button.primary {
     background: rgba(20, 30, 41, 0.92);
   }
 }
+
+/* Closed-category chip (Jev triage) */
+.closed-category-chip {
+  display: inline-block;
+  padding: 3px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+}
+.closed-category-chip.cat-reparado { color: var(--green); border-color: rgba(66, 211, 146, 0.45); background: rgba(66, 211, 146, 0.10); }
+.closed-category-chip.cat-falso_positivo { color: var(--yellow); border-color: rgba(243, 189, 71, 0.45); background: rgba(243, 189, 71, 0.10); }
+.closed-category-chip.cat-duplicado { color: var(--blue); border-color: rgba(124, 199, 255, 0.45); background: rgba(124, 199, 255, 0.10); }
+.closed-category-chip.cat-no_aplica { color: var(--muted); }
+.closed-category-chip.cat-sin_dato { color: var(--muted); }
+.closed-category-chip.cat-otro { color: var(--muted); }

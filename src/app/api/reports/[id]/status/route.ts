@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { validateRequest, statusUpdateSchema } from "@/lib/validation";
 import { createRequestLogger, generateRequestId } from "@/lib/logger";
+import { classifyClosedReason } from "@/lib/jev";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -79,11 +80,30 @@ export async function PATCH(
     "Status transition successful",
   );
 
+  // Jev triage of the free-text close reason (best-effort; never blocks the close)
+  let closedCategory: string | null = null;
+  if (body.status === "cerrado") {
+    closedCategory = await classifyClosedReason(body.closedReason ?? null);
+    const { error: categoryError } = await supabase
+      .from("reportes")
+      .update({ closed_category: closedCategory })
+      .eq("id", id);
+    if (categoryError) {
+      // Column may not exist yet (migration pending) — degrade silently
+      log.warn(
+        { reportId: id, error: categoryError.message, closedCategory },
+        "Could not persist closed_category (run the closed_category migration?)"
+      );
+      closedCategory = null;
+    }
+  }
+
   return NextResponse.json({
     id: result?.id ?? id,
     status: result?.status ?? body.status,
     closed_reason: result?.closed_reason ?? null,
     closed_at: result?.closed_at ?? null,
+    closed_category: closedCategory,
     generatedFrom: "supabase",
   });
 }
