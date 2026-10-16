@@ -359,14 +359,16 @@ begin
     raise exception 'Transicion invalida: % → %', current_status, new_status;
   end if;
 
-  update public.reportes
+  -- r. qualification is REQUIRED: the RETURNS TABLE columns (id, status, ...)
+  -- are PL/pgSQL variables; unqualified names raise 42702 'ambiguous'.
+  update public.reportes as r
   set
     status = new_status,
     closed_reason = case when new_status = 'cerrado' then coalesce(reason, '') else null end,
     closed_at = case when new_status = 'cerrado' then now() else null end,
     updated_at = now()
-  where id = target_id
-  returning id, status, closed_reason, closed_at
+  where r.id = target_id
+  returning r.id, r.status, r.closed_reason, r.closed_at
   into id, status, closed_reason, closed_at;
 
   return next;
