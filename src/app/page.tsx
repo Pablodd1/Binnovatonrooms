@@ -8,6 +8,7 @@ import { validateImageSet } from "@/lib/image-limits";
 import DefectHeatmap from "@/components/DefectHeatmap";
 import CaptureCoach from "@/components/CaptureCoach";
 import ShotProgress from "@/components/ShotProgress";
+import { useVoiceCommands, type VoiceCommand } from "@/lib/useVoiceCommands";
 import type { HeatmapData } from "@/lib/analytics";
 import {
   AlertTriangle,
@@ -24,6 +25,7 @@ import {
   ListChecks,
   Loader2,
   MapPin,
+  Mic,
   MoreHorizontal,
   Radar,
   Ruler,
@@ -505,8 +507,10 @@ export default function Home() {
   const [showFramingGrid, setShowFramingGrid] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [shutterFlash, setShutterFlash] = useState(false);
+  const [analyzeElapsed, setAnalyzeElapsed] = useState(0);
   const resultsRef = useRef<HTMLElement>(null);
   const cameraRestartRef = useRef(false);
+  const voiceRef = useRef<{ pause: () => void; resume: () => void } | null>(null);
 
   const severe = analysis?.diagnosis.severidad === "alta" || analysis?.diagnosis.severidad === "critica";
   const riskScore = severityScore(analysis?.diagnosis.severidad);
@@ -656,6 +660,9 @@ export default function Home() {
       return;
     }
 
+    // Voice recognition and getUserMedia share one audio pipeline on
+    // Chrome/Android — release the mic first, reclaim it after the stream.
+    voiceRef.current?.pause();
     stopStream();
     const constraints: MediaStreamConstraints = {
       video: selectedDeviceId
@@ -679,6 +686,8 @@ export default function Home() {
     } catch {
       setIsCameraActive(false);
       setError("No pude activar la camara. Revise permisos, HTTPS, o use subir imagen.");
+    } finally {
+      window.setTimeout(() => voiceRef.current?.resume(), 400);
     }
   }, [refreshDevices, selectedDeviceId, stopStream, facingMode]);
 
@@ -762,6 +771,18 @@ export default function Home() {
       resultsRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [analysis]);
+
+  // Elapsed-time ticker for the analyzing overlay (13-30s of otherwise silent wait)
+  useEffect(() => {
+    if (!isAnalyzing) return;
+    const started = Date.now();
+    setAnalyzeElapsed(0);
+    const timer = window.setInterval(
+      () => setAnalyzeElapsed(Math.round((Date.now() - started) / 1000)),
+      500
+    );
+    return () => window.clearInterval(timer);
+  }, [isAnalyzing]);
 
   const getLocation = useCallback(() => {
     if (!navigator.geolocation) {
@@ -865,6 +886,42 @@ export default function Home() {
       setIsAnalyzing(false);
     }
   }, [cameraLabel, captureFrame, captures, coords, detailLevel, lidarNotes, loadOperationalData, locationLabel, stopStream]);
+
+  /** Execute a matched voice command against the current app state. */
+  const executeVoiceCommand = useCallback((command: VoiceCommand) => {
+    switch (command) {
+      case "capturar":
+        if (isCameraActive) handleShutter();
+        break;
+      case "analizar":
+        if (!isAnalyzing && (captures.length > 0 || isCameraActive)) analyze();
+        break;
+      case "iniciar":
+        if (!isCameraActive) startCamera();
+        break;
+      case "detener":
+        if (isCameraActive) {
+          stopStream();
+          setError("");
+        }
+        break;
+      case "voltear":
+        if (isCameraActive) toggleCameraFacing();
+        break;
+      case "linterna":
+        toggleTorch();
+        break;
+      case "limpiar":
+        if (captures.length > 0) clearCaptures();
+        break;
+    }
+  }, [analyze, clearCaptures, captures.length, handleShutter, isAnalyzing, isCameraActive, startCamera, stopStream, toggleCameraFacing, toggleTorch]);
+
+  const voice = useVoiceCommands({ onCommand: executeVoiceCommand });
+
+  useEffect(() => {
+    voiceRef.current = { pause: voice.pause, resume: voice.resume };
+  }, [voice.pause, voice.resume]);
 
   useEffect(() => {
     const captureUrls = captureUrlsRef.current;
@@ -1194,6 +1251,18 @@ export default function Home() {
             {/* Floating camera controls (top-right of viewer) */}
             {isCameraActive && (
               <div className="viewer-controls">
+                {voice.supported && (
+                  <button
+                    type="button"
+                    className={clsx("viewer-ctrl-btn voice-ctrl-btn", voice.enabled && "active voice-ctrl-on")}
+                    onClick={voice.toggle}
+                    title={voice.enabled ? "Voz activa — toque para apagar" : "Comandos de voz"}
+                    aria-label={voice.enabled ? "Desactivar comandos de voz" : "Activar comandos de voz"}
+                    aria-pressed={voice.enabled}
+                  >
+                    <Mic size={20} />
+                  </button>
+                )}
                 <button
                   type="button"
                   className={clsx("viewer-ctrl-btn", torchOn && "active")}
@@ -1221,6 +1290,16 @@ export default function Home() {
                 >
                   <Grid3x3 size={20} />
                 </button>
+                <button
+                  type="button"
+                  className={clsx("viewer-ctrl-btn", compareMode && "active")}
+                  onClick={handleCompareToggle}
+                  disabled={reports.length === 0 && !compareMode}
+                  title="Comparar con reporte anterior"
+                  aria-label="Comparar con reporte anterior"
+                >
+                  <Ruler size={20} />
+                </button>
               </div>
             )}
 
@@ -1242,7 +1321,28 @@ export default function Home() {
               <span className="shutter-label">
                 {isCameraActive ? "Tomar foto" : "Activar cámara"}
               </span>
+              {voice.enabled && (
+                <span className="voice-chip" role="status" aria-live="polite">
+                  {voice.lastHeard ? `"${voice.lastHeard}"` : "Escuchando… diga: capturar, analizar, voltear, detener"}
+                </span>
+              )}
             </div>
+
+            {/* Analyzing overlay — elapsed time + stage copy so the wait is legible */}
+            {isAnalyzing && (
+              <div className="analyzing-overlay" role="status" aria-live="polite">
+                <Loader2 className="spin" size={26} />
+                <strong>Analizando con IA…</strong>
+                <span>
+                  {analyzeElapsed}s ·{" "}
+                  {analyzeElapsed < 12
+                    ? "revisando fotos"
+                    : analyzeElapsed < 25
+                      ? "generando diagnostico"
+                      : "revision adicional en curso"}
+                </span>
+              </div>
+            )}
 
             {compareMode && compareImageUrl && previewUrl && (
               <div
@@ -1543,7 +1643,7 @@ export default function Home() {
           {analysis.diagnosis.outcome === "defect_detected" && <div className="installers">
             <h2>Instaladores sugeridos</h2>
             {analysis.installers.length === 0 ? (
-              <p className="muted">No hay instaladores cargados todavia. Agreguelos en Supabase.</p>
+              <p className="muted">No hay instaladores disponibles para esta zona todavia.</p>
             ) : (
               analysis.installers.map((installer) => (
                 <article key={installer.id}>

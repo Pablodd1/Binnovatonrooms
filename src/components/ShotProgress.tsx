@@ -8,32 +8,28 @@ export type ShotType = {
 type Props = {
   shots: ShotType[];
   capturedCount: number;
-  onSelect?: (index: number) => void;
 };
 
-export default function ShotProgress({ shots, capturedCount, onSelect }: Props) {
+export default function ShotProgress({ shots, capturedCount }: Props) {
   const activeIndex = Math.min(capturedCount, shots.length - 1);
 
   return (
-    <div className="shot-progress" role="tablist" aria-label="Progreso de fotos">
+    <div className="shot-progress" aria-label="Progreso de fotos">
       {shots.map((shot, i) => {
         const isCaptured = i < capturedCount;
         const isActive = i === activeIndex && !isCaptured;
         return (
-          <button
+          <div
             key={shot.label}
-            type="button"
-            role="tab"
-            aria-selected={isActive}
+            aria-current={isActive ? "step" : undefined}
             className={`shot-dot ${isCaptured ? "captured" : ""} ${isActive ? "active" : ""}`}
-            onClick={() => onSelect?.(i)}
             title={`${shot.label}: ${shot.detail}`}
           >
             <span className="shot-dot-circle" aria-hidden="true">
               {isCaptured ? "✓" : i + 1}
             </span>
             <span className="shot-dot-label">{shot.label}</span>
-          </button>
+          </div>
         );
       })}
     </div>

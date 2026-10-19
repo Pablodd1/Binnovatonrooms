@@ -1,5 +1,5 @@
-const CACHE_NAME = "buildscan-v2";
-const STATIC_ASSETS = ["/", "/login", "/reports", "/manifest.json"];
+const CACHE_NAME = "buildscan-v3";
+const STATIC_ASSETS = ["/", "/reports", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -43,7 +43,18 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Static assets: cache-first
+  // Only immutable hashed assets are cache-first. Everything else (RSC
+  // prefetch payloads, manifest, _rsc= requests) passes through so a deploy
+  // is never masked by a stale shell.
+  const isImmutableStatic =
+    url.pathname.startsWith("/_next/static/") ||
+    url.pathname.startsWith("/icon-") ||
+    url.pathname === "/robots.txt";
+
+  if (!isImmutableStatic) {
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;

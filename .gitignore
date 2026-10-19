@@ -36,6 +36,11 @@ real-estate-dates-WEBSITE2/
 pocketscribe/
 research-watch/
 
+Comandvoice/
+CuasarX-Longevity-Overview.pptx
+supabase/.temp/
+supabase/.branches/
+
 # Workspace debris (local scratch files)
 cron-fire-*.txt
 cron-logs.txt
