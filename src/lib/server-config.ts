@@ -9,7 +9,7 @@ export type RuntimeHealth = {
 
 export function getRuntimeHealth(): RuntimeHealth {
   const missing: string[] = [];
-  const model = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+  const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 
   if (!process.env.GEMINI_API_KEY) missing.push("GEMINI_API_KEY");
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) missing.push("NEXT_PUBLIC_SUPABASE_URL");
@@ -37,6 +37,6 @@ export function requireGeminiConfig() {
 
   return {
     apiKey: process.env.GEMINI_API_KEY,
-    model: process.env.GEMINI_MODEL || "gemini-3.6-flash"
+    model: process.env.GEMINI_MODEL || "gemini-3.8-flash"
   };
 }
