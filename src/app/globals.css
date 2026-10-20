@@ -2571,3 +2571,66 @@ button.primary {
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.75);
 }
+
+/* Defect history timeline */
+.history-panel { grid-column: 1 / -1; }
+
+.history-alert {
+  color: var(--yellow);
+  font-weight: 700;
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+}
+
+.history-delta {
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-bottom: 10px;
+}
+
+.history-timeline {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-point {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 0.82rem;
+}
+
+.history-point.current {
+  border-color: rgba(66, 211, 146, 0.45);
+  background: rgba(66, 211, 146, 0.07);
+}
+
+.history-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.history-dot.sev-critica { background: var(--red); }
+.history-dot.sev-alta { background: var(--yellow); }
+.history-dot.sev-media { background: var(--blue); }
+.history-dot.sev-baja { background: var(--green); }
+
+.history-date { font-weight: 700; min-width: 90px; }
+.history-conf { color: var(--muted); min-width: 46px; }
+.history-status { color: var(--muted); }
+.history-current-tag {
+  margin-left: auto;
+  color: var(--green);
+  font-weight: 800;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}

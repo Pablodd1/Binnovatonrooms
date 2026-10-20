@@ -18,6 +18,10 @@ type ReportRow = {
   location_label: string | null;
   lat: number | null;
   lng: number | null;
+  status: string | null;
+  closed_reason: string | null;
+  closed_category: string | null;
+  closed_at: string | null;
   quality: unknown;
   report_images: Array<{
     id: string;
@@ -59,6 +63,13 @@ function safeSeverityClass(sev: string | null | undefined): string {
   return VALID_SEVERITIES.has(s) ? s : "baja";
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  nuevo: "Nuevo",
+  revision: "En revision",
+  asignar: "Asignado",
+  cerrado: "Cerrado",
+};
+
 function buildPdfHtml(report: ReportRow): string {
   const diag = report.diagnostico;
   const sevClass = safeSeverityClass(report.severidad);
@@ -67,92 +78,150 @@ function buildPdfHtml(report: ReportRow): string {
     : sevClass === "media" ? "#7cc7ff"
     : "#42d392";
 
+  const confidencePct = diag ? Math.round(diag.confianza * 100) : 0;
+  const urgency = diag ? (diag.urgencia_dias === 0 ? "Inmediata" : `${diag.urgencia_dias} dias`) : "—";
+  const status = (report.status || "nuevo").toLowerCase();
+  const statusLabel = STATUS_LABELS[status] || esc(report.status || "");
+  const isClosed = status === "cerrado";
+
   const evidenceItems = diag?.evidencia_visual?.map((e) => `<li>${esc(e)}</li>`).join("") || "<li>Sin evidencia</li>";
   const riskItems = diag?.riesgos?.map((r) => `<li>${esc(r)}</li>`).join("") || "";
-  const stepItems = diag?.solucion_paso_a_paso?.map((s, i) => `<li><strong>${i + 1}.</strong> ${esc(s)}</li>`).join("") || "";
+  const stepItems = diag?.solucion_paso_a_paso?.map((s, i) => `<li><span class="stepnum">${i + 1}</span>${esc(s)}</li>`).join("") || "";
   const measureItems = diag?.mediciones_recomendadas?.map((m) => `<li>${esc(m)}</li>`).join("") || "";
+  const markers = diag?.visual_indicators ?? [];
 
-  const buildImg = (url: string | null) => {
+  const buildImg = (url: string | null, index: number) => {
     const safe = safeImgSrc(url);
-    return safe ? `<img src="${safe}" style="max-width:100%;border-radius:8px;margin:8px 0;" />` : "";
+    return safe ? `<figure><img src="${safe}" /><figcaption>Foto ${index}</figcaption></figure>` : "";
   };
-  const imagesHtml = report.report_images?.map((img) => buildImg(img.image_url)).join("") || buildImg(report.image_url);
+  const imagesHtml = (report.report_images?.length
+    ? report.report_images.map((img, i) => buildImg(img.image_url, i + 1))
+    : [buildImg(report.image_url, 1)]
+  ).join("");
 
   return `<!DOCTYPE html>
-<html><head><meta charset="utf-8">
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https:; style-src 'unsafe-inline'; script-src 'none'">
-<title>BuildScan AI - Reporte ${report.id.slice(0, 8)}</title>
+<title>BuildScan AI — Reporte ${report.id.slice(0, 8)}</title>
 <style>
+  @page { size: A4; margin: 14mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #1a1a2e; background: #fff; padding: 40px; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #101820; padding-bottom: 20px; margin-bottom: 24px; }
-  .header h1 { font-size: 1.6rem; color: #101820; }
-  .header .subtitle { color: #666; font-size: 0.9rem; margin-top: 4px; }
-  .header .date { color: #888; font-size: 0.85rem; text-align: right; }
-  .badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 0.85rem; }
-  .badge-critica { background: #ff695f22; color: #d63031; }
-  .badge-alta { background: #f3bd4722; color: #b8860b; }
-  .badge-media { background: #7cc7ff22; color: #2d6a8f; }
-  .badge-baja { background: #42d39222; color: #1e7e4e; }
-  .meta { display: flex; gap: 24px; margin: 16px 0 24px; flex-wrap: wrap; }
-  .meta-item label { display: block; color: #888; font-size: 0.8rem; margin-bottom: 4px; }
-  .meta-item span { font-size: 0.95rem; }
-  .section { margin: 24px 0; }
-  .section h2 { font-size: 1.1rem; color: #101820; border-left: 4px solid ${severityColor}; padding-left: 12px; margin-bottom: 12px; }
-  .field { margin: 12px 0; }
-  .field label { display: block; color: #888; font-size: 0.8rem; margin-bottom: 4px; }
-  .field p { font-size: 0.95rem; line-height: 1.5; }
+  body { font-family: Arial, Helvetica, sans-serif; color: #16222d; background: #fff; padding: 0 0 32px; }
+
+  /* Brand band */
+  .brand { background: #101820; color: #fff; padding: 26px 40px; display: flex; justify-content: space-between; align-items: center; }
+  .brand .logo { font-size: 1.45rem; font-weight: 800; letter-spacing: 0.5px; }
+  .brand .logo span { color: #42d392; }
+  .brand .tag { color: #a9b8c5; font-size: 0.78rem; margin-top: 3px; }
+  .brand .doc { text-align: right; font-size: 0.72rem; color: #a9b8c5; line-height: 1.5; }
+  .accent { height: 5px; background: ${severityColor}; }
+
+  .content { padding: 28px 40px 0; }
+
+  /* Executive summary */
+  .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 26px; }
+  .summary .cell { border: 1px solid #e3e9ee; border-radius: 10px; padding: 12px 14px; }
+  .summary .cell label { display: block; color: #8494a3; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 5px; }
+  .summary .cell strong { font-size: 1.02rem; }
+  .summary .cell strong.sev { color: ${severityColor}; }
+
+  .title-row { display: flex; align-items: baseline; gap: 12px; margin: 4px 0 20px; }
+  .title-row h1 { font-size: 1.5rem; text-transform: capitalize; }
+  .title-row .report-id { color: #8494a3; font-size: 0.78rem; }
+
+  .section { margin: 26px 0; page-break-inside: avoid; }
+  .section > h2 { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 1px; color: #101820; border-left: 4px solid ${severityColor}; padding-left: 10px; margin-bottom: 12px; }
+  .field { margin: 10px 0; }
+  .field label { display: block; color: #8494a3; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
+  .field p, .field li { font-size: 0.92rem; line-height: 1.55; }
   .field ul, .field ol { padding-left: 20px; }
-  .field li { font-size: 0.9rem; line-height: 1.6; margin-bottom: 4px; }
-  .confidence-bar { background: #eee; border-radius: 8px; height: 20px; overflow: hidden; margin-top: 6px; }
+  .field li { margin-bottom: 5px; }
+  .stepnum { display: inline-block; min-width: 22px; font-weight: 800; color: ${severityColor}; }
+
+  .confidence-bar { background: #edf1f4; border-radius: 8px; height: 18px; overflow: hidden; margin-top: 6px; }
   .confidence-fill { height: 100%; background: ${severityColor}; border-radius: 8px; }
-  .confidence-text { font-size: 0.85rem; color: #555; margin-top: 4px; }
-  .images { margin: 16px 0; }
-  .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #ddd; color: #aaa; font-size: 0.75rem; text-align: center; }
-  @media print { body { padding: 20px; } }
+
+  figure { margin: 10px 0; page-break-inside: avoid; }
+  figure img { max-width: 100%; border: 1px solid #e3e9ee; border-radius: 8px; }
+  figure figcaption { color: #8494a3; font-size: 0.72rem; margin-top: 4px; }
+
+  .closed-box { border: 1px solid #e3e9ee; border-left: 4px solid #42d392; border-radius: 8px; padding: 12px 16px; margin: 18px 0; }
+  .closed-box label { display: block; color: #8494a3; font-size: 0.72rem; text-transform: uppercase; margin-bottom: 3px; }
+
+  .disclaimer { background: #f6f8fa; border-radius: 8px; padding: 10px 14px; color: #5b6b7a; font-size: 0.75rem; line-height: 1.5; margin-top: 24px; }
+
+  .footer { margin-top: 28px; padding: 14px 40px 0; border-top: 1px solid #e3e9ee; color: #9aa9b7; font-size: 0.7rem; display: flex; justify-content: space-between; }
+
+  @media print { .brand { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 </style></head><body>
-  <div class="header">
+  <div class="brand">
     <div>
-      <h1>BuildScan AI - Reporte de Inspeccion</h1>
-      <div class="subtitle">Inspeccion visual con IA para control de calidad en construccion</div>
+      <div class="logo">Build<span>Scan</span> AI</div>
+      <div class="tag">Inspeccion visual con IA para control de calidad en construccion</div>
     </div>
-    <div class="date">${formatDate(report.created_at)}</div>
-  </div>
-
-  <div style="display:flex;gap:12px;margin-bottom:24px;align-items:center;">
-    <span class="badge badge-${sevClass}">${esc(report.severidad?.toUpperCase())}</span>
-    <span style="font-weight:700;font-size:1.1rem;">${esc(report.tipo_defecto)}</span>
-  </div>
-
-  <div class="meta">
-    <div class="meta-item"><label>Ubicacion</label><span>${esc(report.location_label ?? "No especificada")}</span></div>
-    <div class="meta-item"><label>Especialista</label><span>${esc(report.especialista_requerido)}</span></div>
-    <div class="meta-item"><label>Camara</label><span>${esc(report.camera_label ?? "No registrada")}</span></div>
-    ${report.lat ? `<div class="meta-item"><label>Coordenadas</label><span>${Number(report.lat).toFixed(4)}, ${Number(report.lng).toFixed(4)}</span></div>` : ""}
-  </div>
-
-  ${imagesHtml ? `<div class="section"><h2>Evidencia Visual</h2><div class="images">${imagesHtml}</div></div>` : ""}
-
-  ${diag ? `
-  <div class="section"><h2>Diagnostico</h2>
-    <div class="field"><label>Ubicacion del defecto</label><p>${esc(diag.ubicacion)}</p></div>
-    <div class="field"><label>Causa probable</label><p>${esc(diag.causa_probable)}</p></div>
-    <div class="field"><label>Confianza del analisis</label>
-      <div class="confidence-bar"><div class="confidence-fill" style="width:${Math.round(diag.confianza * 100)}%"></div></div>
-      <div class="confidence-text">${Math.round(diag.confianza * 100)}% ${diag.requiere_revision_humana ? "(revision humana requerida)" : ""}</div>
+    <div class="doc">
+      Reporte de inspeccion<br>
+      ${formatDate(report.created_at)}<br>
+      Ref: ${report.id.slice(0, 8)}
     </div>
-    <div class="field"><label>Urgencia</label><p>${diag.urgencia_dias === 0 ? "Inmediata" : diag.urgencia_dias + " dias"}</p></div>
   </div>
+  <div class="accent"></div>
 
-  ${riskItems ? `<div class="section"><h2>Riesgos Identificados</h2><ul>${riskItems}</ul></div>` : ""}
-  ${stepItems ? `<div class="section"><h2>Plan de Accion Paso a Paso</h2><ol>${stepItems}</ol></div>` : ""}
-  ${measureItems ? `<div class="section"><h2>Mediciones Recomendadas</h2><ul>${measureItems}</ul></div>` : ""}
+  <div class="content">
+    <div class="summary">
+      <div class="cell"><label>Severidad</label><strong class="sev">${esc((report.severidad || "").toUpperCase())}</strong></div>
+      <div class="cell"><label>Confianza IA</label><strong>${confidencePct}%</strong></div>
+      <div class="cell"><label>Urgencia</label><strong>${esc(urgency)}</strong></div>
+      <div class="cell"><label>Estado</label><strong>${esc(statusLabel)}</strong></div>
+    </div>
 
-  <div class="section"><h2>Evidencia Detectada</h2><ul>${evidenceItems}</ul></div>
-  ` : "<p>No hay datos de diagnostico disponibles.</p>"}
+    <div class="title-row">
+      <h1>${esc(report.tipo_defecto)}</h1>
+      <span class="report-id">Especialista: ${esc(report.especialista_requerido)}</span>
+    </div>
+
+    <div class="section"><h2>Ubicacion y contexto</h2>
+      <div class="field"><label>Area reportada</label><p>${esc(report.location_label || "No especificada")}</p></div>
+      <div class="field"><label>Camara</label><p>${esc(report.camera_label || "No registrada")}</p></div>
+      ${report.lat ? `<div class="field"><label>Coordenadas GPS</label><p>${Number(report.lat).toFixed(5)}, ${Number(report.lng).toFixed(5)}</p></div>` : ""}
+    </div>
+
+    ${imagesHtml ? `<div class="section"><h2>Evidencia fotografica</h2>${imagesHtml}</div>` : ""}
+
+    ${diag ? `
+    <div class="section"><h2>Diagnostico tecnico</h2>
+      <div class="field"><label>Ubicacion del defecto</label><p>${esc(diag.ubicacion)}</p></div>
+      <div class="field"><label>Causa probable</label><p>${esc(diag.causa_probable)}</p></div>
+      <div class="field"><label>Confianza del analisis</label>
+        <div class="confidence-bar"><div class="confidence-fill" style="width:${confidencePct}%"></div></div>
+      </div>
+      ${markers.length ? `<div class="field"><label>Zonas marcadas</label><ul>${markers.map((m) => `<li>${esc(m.label)} (${Math.round((m.confidence || 0) * 100)}%)</li>`).join("")}</ul></div>` : ""}
+    </div>
+
+    ${riskItems ? `<div class="section"><h2>Riesgos identificados</h2><ul>${riskItems}</ul></div>` : ""}
+    ${stepItems ? `<div class="section"><h2>Plan de accion paso a paso</h2><ol>${stepItems}</ol></div>` : ""}
+    ${measureItems ? `<div class="section"><h2>Mediciones recomendadas</h2><ul>${measureItems}</ul></div>` : ""}
+    <div class="section"><h2>Evidencia detectada</h2><ul>${evidenceItems}</ul></div>
+    ` : "<p>No hay datos de diagnostico disponibles.</p>"}
+
+    ${isClosed ? `
+    <div class="closed-box">
+      <label>Reporte cerrado${report.closed_category ? ` — categoria: ${esc(report.closed_category)}` : ""}</label>
+      <p>${esc(report.closed_reason || "Sin motivo registrado")}</p>
+      ${report.closed_at ? `<p style="color:#8494a3;font-size:0.78rem;margin-top:4px;">${formatDate(report.closed_at)}</p>` : ""}
+    </div>` : ""}
+
+    <div class="disclaimer">
+      <strong>Nota:</strong> Diagnostico asistido por inteligencia artificial a partir de evidencia fotografica.
+      No sustituye la evaluacion de un profesional colegiado. Verifique las mediciones en sitio antes de
+      ejecutar trabajos de reparacion.
+    </div>
+  </div>
 
   <div class="footer">
-    Generado por BuildScan AI &mdash; ${new Date().toISOString().split("T")[0]} &mdash; ID: ${esc(report.id)}
+    <span>BuildScan AI — documento generado automaticamente</span>
+    <span>ID completo: ${esc(report.id)}</span>
   </div>
 </body></html>`;
 }
@@ -183,9 +252,8 @@ export async function GET(
 
   const html = buildPdfHtml(report as unknown as ReportRow);
 
-  // Use browserless or basic HTML-to-text fallback
-  // For now, return HTML as a downloadable file that browsers can print-to-PDF
-  // In production, integrate with a PDF service or @react-pdf/renderer
+  // Branded printable document: browsers render this pixel-perfect and
+  // "Guardar como PDF" produces the professional deliverable.
   return new NextResponse(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",

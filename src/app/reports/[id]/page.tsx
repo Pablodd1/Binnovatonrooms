@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import EvidenceImage from "@/components/EvidenceImage";
 import { markersForImage, diagnosisTitle } from "@/lib/evidence";
+import { buildDefectHistory } from "@/lib/report-history";
 import type { InspectionDiagnosis, InstallerMatch } from "@/lib/analysis-schema";
-import type { ReportStatus } from "@/lib/reports";
+import type { ReportStatus, ReportSummary } from "@/lib/reports";
 import { STATUS_LABELS, VALID_TRANSITIONS } from "@/lib/reports";
 
 type ReportImage = {
@@ -94,6 +95,27 @@ export default function ReportDetailPage() {
   }, [id]);
 
   useEffect(() => { loadReport(); }, [loadReport]);
+
+  // Defect history: all summaries (bounded) to find same-location visits
+  const [allReports, setAllReports] = useState<ReportSummary[]>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/reports?limit=200");
+        if (!res.ok) return;
+        const data = await res.json();
+        setAllReports(data.reports || []);
+      } catch {
+        // history is supplementary — silent on failure
+      }
+    })();
+  }, []);
+
+  const history = useMemo(
+    () => (report ? buildDefectHistory(allReports, { id: String(id || "") }) : null),
+    [allReports, report, id]
+  );
+  const historyOthers = (history?.points || []).filter((p) => !p.isCurrent);
 
   async function handleDownloadPdf() {
     if (!id) return;
@@ -225,6 +247,34 @@ export default function ReportDetailPage() {
             ))}
           </div>
         </div>
+
+        {/* Defect history — same location across visits */}
+        {history && historyOthers.length > 0 && (
+          <div className="report-detail-section history-panel">
+            <h3>Historial del Defecto ({history.points.length} visitas)</h3>
+            {history.severityChanged && (
+              <p className="history-alert">⚠ La severidad cambio entre visitas</p>
+            )}
+            {history.confidenceDelta !== null && (
+              <p className="history-delta">
+                Confianza {history.confidenceDelta >= 0 ? "+" : ""}{history.confidenceDelta}% vs. visita anterior
+              </p>
+            )}
+            <ol className="history-timeline">
+              {history.points.map((point) => (
+                <li key={point.id} className={point.isCurrent ? "history-point current" : "history-point"}>
+                  <span className={`history-dot sev-${point.severity}`} aria-hidden="true" />
+                  <span className="history-date">
+                    {new Date(point.createdAt).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}
+                  </span>
+                  <span className="history-conf">{Math.round(point.confidence * 100)}%</span>
+                  <span className={`history-status status-${point.status}`}>{STATUS_LABELS[point.status as ReportStatus] || point.status}</span>
+                  {point.isCurrent && <span className="history-current-tag">Este reporte</span>}
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
 
         {/* Workflow Status Panel */}
         <div className="report-detail-section workflow-panel">
